@@ -95,15 +95,14 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
             <aside
                 className={`
                     bg-gray-50 border-r border-gray-200 p-6 flex-shrink-0 
-                    h-[calc(100vh-theme(spacing.16))] md:h-screen overflow-y-auto sticky top-0
+                    h-screen overflow-y-auto fixed md:sticky top-0 left-0
                     transition-all duration-300 ease-in-out
-                    ${isSidebarOpen ? 'w-full md:w-80 translate-x-0 opacity-100' : 'w-0 -translate-x-full opacity-0 overflow-hidden p-0 border-none'}
+                    ${isSidebarOpen ? 'w-full md:w-80 translate-x-0 opacity-100 z-30' : 'w-0 -translate-x-full opacity-0 overflow-hidden p-0 border-none -z-10'}
                     [&::-webkit-scrollbar]:w-1.5
                     [&::-webkit-scrollbar-track]:bg-transparent
                     [&::-webkit-scrollbar-thumb]:bg-gray-200
                     [&::-webkit-scrollbar-thumb]:rounded-full
                     hover:[&::-webkit-scrollbar-thumb]:bg-gray-300
-                    z-30 absolute md:relative h-full
                 `}
             >
                 <div className="flex justify-end mb-4 md:hidden">
@@ -166,14 +165,6 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                 <div className="max-w-2xl w-full bg-white shadow-lg rounded-xl overflow-hidden mt-4">
                     <header className="bg-blue-600 text-white p-6">
                         <div className="flex items-center gap-4">
-                            <button
-                                onClick={() => setIsSidebarOpen(true)}
-                                className="p-1 rounded hover:bg-blue-500 md:hidden text-white"
-                            >
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-                                </svg>
-                            </button>
                             <div>
                                 <h1 className="text-3xl font-bold">{collectionName}</h1>
                                 <p className="mt-2 text-blue-100">Browse documents in this collection</p>

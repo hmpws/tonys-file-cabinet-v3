@@ -133,9 +133,9 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             <aside
                 className={`
                     bg-gray-50 border-r border-gray-200 p-6 flex-shrink-0 
-                    h-[calc(100vh-theme(spacing.16))] md:h-screen overflow-y-auto sticky top-0
+                    h-screen overflow-y-auto fixed md:sticky top-0 left-0
                     transition-all duration-300 ease-in-out
-                    ${isSidebarOpen ? 'w-full md:w-80 translate-x-0 opacity-100' : 'w-0 -translate-x-full opacity-0 overflow-hidden p-0 border-none'}
+                    ${isSidebarOpen ? 'w-full md:w-80 translate-x-0 opacity-100 z-30' : 'w-0 -translate-x-full opacity-0 overflow-hidden p-0 border-none -z-10'}
                     [&::-webkit-scrollbar]:w-1.5
                     [&::-webkit-scrollbar-track]:bg-transparent
                     [&::-webkit-scrollbar-thumb]:bg-gray-200
@@ -220,8 +220,8 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             </aside>
 
             {/* Main Content */}
-            <div className="flex-1 order-1 md:order-2 bg-gray-100 min-h-screen p-4 flex flex-col items-center">
-                <div className="max-w-[800px] w-full bg-white shadow-lg rounded-xl overflow-hidden mt-4">
+            <div className="flex-1 order-1 md:order-2 bg-white min-h-screen p-4 flex flex-col items-center">
+                <div className="max-w-[800px] w-full">
                     <header className="pt-12 pb-8 px-6">
                         <p className="text-blue-600 mb-4 inline-block font-medium">
                             {collectionName}
