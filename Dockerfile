@@ -7,20 +7,15 @@ LABEL fly_launch_runtime="Node.js"
 # Node.js app lives here
 WORKDIR /app
 
-# Set production environment
-ENV NODE_ENV="production"
+
 
 
 # Throw-away build stage to reduce size of final image
 FROM base as build
 
-# Install packages needed to build node modules
-RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y build-essential node-gyp pkg-config python-is-python3
-
 # Install node modules
 COPY --link package-lock.json package.json ./
-RUN npm ci
+RUN npm install
 
 # Copy application code
 COPY --link . .
@@ -34,6 +29,9 @@ RUN npm prune --production
 
 # Final stage for app image
 FROM base
+
+# Set production environment
+ENV NODE_ENV="production"
 
 # Copy built application
 COPY --from=build /app/build /app/build
