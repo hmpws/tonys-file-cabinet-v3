@@ -9,9 +9,16 @@ export function meta({ data }: Route.MetaArgs) {
         return [{ title: "Document Not Found" }];
     }
     const title = data.doc.article?.title || "Untitled Document";
+    const articleId = data.doc.article?.id;
+
     return [
         { title: `${title} - ${data.collectionName}` },
         { name: "description", content: data.doc.article?.subtitle || "View document details" },
+        ...(data.collectionName && articleId ? [{
+            name: "dc.identifier",
+            content: `substack/${data.collectionName}/${articleId}`,
+        }] : []),
+        { name: "dc.relation.ispartof", content: "tonys-file-cabinet" },
     ];
 }
 
@@ -113,6 +120,19 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
     }, [fetcher.data]);
 
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+    useEffect(() => {
+        const script = document.createElement('script');
+        script.src = "https://hypothes.is/embed.js";
+        script.async = true;
+        document.body.appendChild(script);
+
+        return () => {
+            if (document.body.contains(script)) {
+                document.body.removeChild(script);
+            }
+        };
+    }, []);
 
     return (
         <div className="min-h-screen bg-white font-sans flex flex-col md:flex-row relative">
