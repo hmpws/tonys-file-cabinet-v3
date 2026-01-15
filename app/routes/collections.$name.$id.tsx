@@ -220,52 +220,54 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             </aside>
 
             {/* Main Content */}
-            <div className="flex-1 order-1 md:order-2">
-                <header className="max-w-[800px] mx-auto pt-12 pb-8 px-6">
-                    <p className="text-blue-600 mb-4 inline-block font-medium">
-                        {collectionName}
-                    </p>
-                    <h1 className="text-4xl font-bold text-gray-900 leading-tight mb-2">
-                        {doc.article?.title || "Untitled Document"}
-                    </h1>
-                    {doc.article?.subtitle && (
-                        <h2 className="text-xl text-gray-500 font-serif leading-relaxed mb-4">
-                            {doc.article.subtitle}
-                        </h2>
-                    )}
-
-                    <div className="flex items-center text-gray-500 text-sm border-t border-gray-100 pt-4 mt-4">
-                        {doc.article?.post_date && (
-                            <time dateTime={doc.article.post_date}>
-                                {new Date(doc.article.post_date).toLocaleDateString("en-US", {
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric'
-                                })}
-                            </time>
+            <div className="flex-1 order-1 md:order-2 bg-gray-100 min-h-screen p-4 flex flex-col items-center">
+                <div className="max-w-[800px] w-full bg-white shadow-lg rounded-xl overflow-hidden mt-4">
+                    <header className="pt-12 pb-8 px-6">
+                        <p className="text-blue-600 mb-4 inline-block font-medium">
+                            {collectionName}
+                        </p>
+                        <h1 className="text-4xl font-bold text-gray-900 leading-tight mb-2">
+                            {doc.article?.title || "Untitled Document"}
+                        </h1>
+                        {doc.article?.subtitle && (
+                            <h2 className="text-xl text-gray-500 font-serif leading-relaxed mb-4">
+                                {doc.article.subtitle}
+                            </h2>
                         )}
-                    </div>
-                </header>
 
-                <main className="px-6 pb-20 max-w-[800px] mx-auto">
-                    {doc.article?.body_html ? (
-                        <div
-                            className="prose prose-lg prose-slate font-serif
+                        <div className="flex items-center text-gray-500 text-sm border-t border-gray-100 pt-4 mt-4">
+                            {doc.article?.post_date && (
+                                <time dateTime={doc.article.post_date}>
+                                    {new Date(doc.article.post_date).toLocaleDateString("en-US", {
+                                        year: 'numeric',
+                                        month: 'long',
+                                        day: 'numeric'
+                                    })}
+                                </time>
+                            )}
+                        </div>
+                    </header>
+
+                    <main className="px-6 pb-20">
+                        {doc.article?.body_html ? (
+                            <div
+                                className="prose prose-lg prose-slate font-serif
                                            prose-headings:font-sans prose-headings:font-bold prose-headings:text-gray-900
                                            prose-p:text-gray-800 prose-p:leading-relaxed
                                            prose-a:text-blue-600 prose-a:no-underline hover:prose-a:underline
                                            prose-img:rounded-xl prose-img:shadow-md
                                            w-full max-w-none"
-                            dangerouslySetInnerHTML={{ __html: doc.article.body_html }}
-                        />
-                    ) : (
-                        <div className="w-full">
-                            <pre className="bg-gray-100 text-gray-800 p-4 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed border border-gray-200">
-                                {JSON.stringify(doc, null, 2)}
-                            </pre>
-                        </div>
-                    )}
-                </main>
+                                dangerouslySetInnerHTML={{ __html: doc.article.body_html }}
+                            />
+                        ) : (
+                            <div className="w-full">
+                                <pre className="bg-gray-100 text-gray-800 p-4 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed border border-gray-200">
+                                    {JSON.stringify(doc, null, 2)}
+                                </pre>
+                            </div>
+                        )}
+                    </main>
+                </div>
             </div>
         </div>
     );
