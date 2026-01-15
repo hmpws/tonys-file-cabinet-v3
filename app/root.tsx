@@ -46,7 +46,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <>
-      <Breadcrumb />
+      <div className="print:hidden">
+        <Breadcrumb />
+      </div>
       <Outlet />
     </>
   );

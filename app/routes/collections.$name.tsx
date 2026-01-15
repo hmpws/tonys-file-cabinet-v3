@@ -82,7 +82,7 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
             {!isSidebarOpen && (
                 <button
                     onClick={() => setIsSidebarOpen(true)}
-                    className="fixed left-4 top-24 z-20 p-2 bg-white border border-gray-200 rounded-md shadow-md text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all"
+                    className="fixed left-4 top-24 z-20 p-2 bg-white border border-gray-200 rounded-md shadow-md text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all print:hidden"
                     aria-label="Open sidebar"
                 >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -103,6 +103,7 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                     [&::-webkit-scrollbar-thumb]:bg-gray-200
                     [&::-webkit-scrollbar-thumb]:rounded-full
                     hover:[&::-webkit-scrollbar-thumb]:bg-gray-300
+                    print:hidden
                 `}
             >
                 <div className="flex justify-end mb-4 md:hidden">
