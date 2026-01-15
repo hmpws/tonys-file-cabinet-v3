@@ -112,7 +112,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
         }
     }, [fetcher.data]);
 
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     return (
         <div className="min-h-screen bg-white font-sans flex flex-col md:flex-row relative">

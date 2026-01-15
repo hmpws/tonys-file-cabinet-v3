@@ -47,7 +47,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         <header className="bg-blue-600 text-white p-6 flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold">Tony's File Cabinet</h1>
-            <p className="mt-2 text-blue-100">MongoDB Collections Explorer</p>
+            <p className="mt-2 text-blue-100">Browse collections</p>
           </div>
           <Form action="/logout" method="post">
             <button type="submit" className="bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 px-4 rounded transition-colors text-sm">
