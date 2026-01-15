@@ -17,10 +17,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const client = await clientPromise;
   const db = client.db("substack");
   const collectionsList = await db.listCollections().toArray();
+  collectionsList.sort((a, b) => a.name.localeCompare(b.name));
 
   const collections = await Promise.all(
     collectionsList.map(async (c) => {
-      const doc = await db.collection(c.name).findOne({}, { projection: { "article.post_date": 1 } });
+      const doc = await db.collection(c.name).findOne({}, { sort: { "article.post_date": -1 }, projection: { "article.post_date": 1 } });
       const lastFetched = doc?.article?.post_date || null;
       return {
         name: c.name,
@@ -85,7 +86,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                   <Link to={`/collections/${c.name}`} className="block w-full h-full py-4 px-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
-                        <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600 transition-colors capitalize">
+                        <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600 transition-colors">
                           {c.name}
                         </span>
                         {c.lastFetched && (

@@ -1,12 +1,9 @@
 import type { Route } from "./+types/collections.$name";
-import { Link, useSearchParams, Form } from "react-router";
+import { Link, useSearchParams, Form, useSubmit, useNavigation } from "react-router";
 import clientPromise from "../db.server";
 
 export function meta({ params }: Route.MetaArgs) {
-    return [
-        { title: `${params.name} - Tony's File Cabinet` },
-        { name: "description", content: `Viewing collection: ${params.name}` },
-    ];
+    // ... existing meta ...
 }
 
 import { requireUser } from "../sessions.server";
@@ -30,6 +27,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     // Projection to get _id, article.title, and article.post_date
     const documents = await collection
         .find(filter)
+        .sort({ "article.post_date": -1 })
         .project({ _id: 1, "article.title": 1, "article.post_date": 1 })
         .skip(skip)
         .limit(limit)
@@ -53,18 +51,26 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
     const { collectionName, documents, page, totalPages } = loaderData;
     const [searchParams] = useSearchParams();
+    const submit = useSubmit();
+    const navigation = useNavigation();
+    const isSearching = navigation.state === "loading" && navigation.location.search.includes("q=");
 
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 font-sans p-4">
             <div className="max-w-2xl w-full bg-white shadow-lg rounded-xl overflow-hidden">
                 <header className="bg-blue-600 text-white p-6">
-                    <h1 className="text-3xl font-bold capitalize">{collectionName}</h1>
+                    <h1 className="text-3xl font-bold">{collectionName}</h1>
                     <p className="mt-2 text-blue-100">Browse documents in this collection</p>
                 </header>
 
                 <main className="p-6">
                     <div className="mb-6">
-                        <Form method="get" className="relative">
+                        <Form method="get" className="relative" onChange={(e) => {
+                            const isFirstSearch = e.currentTarget.q.value.length > 0;
+                            submit(e.currentTarget, {
+                                replace: !isFirstSearch
+                            });
+                        }}>
                             <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                                 <svg className="w-4 h-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
                                     <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z" />
@@ -74,9 +80,17 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                                 type="search"
                                 name="q"
                                 defaultValue={loaderData.searchTerm}
-                                className="block w-full p-4 pl-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors"
+                                className="block w-full p-4 pl-10 pr-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors"
                                 placeholder="Search documents..."
                             />
+                            {isSearching && (
+                                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                                    <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </div>
+                            )}
                         </Form>
                     </div>
 
