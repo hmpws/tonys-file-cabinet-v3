@@ -6,4 +6,5 @@ export default [
     route("collections/:name/:id", "routes/collections.$name.$id.tsx"),
     route("login", "routes/login.tsx"),
     route("logout", "routes/logout.tsx"),
+    route("api/annotations", "routes/api.annotations.ts"),
 ] satisfies RouteConfig;

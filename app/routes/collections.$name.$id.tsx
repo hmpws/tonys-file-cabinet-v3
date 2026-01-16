@@ -1,8 +1,10 @@
 import type { Route } from "./+types/collections.$name.$id";
-import { Link, Form, useSearchParams, useFetcher, useSubmit, useNavigation } from "react-router";
+import { Link, Form, useSearchParams, useFetcher, useSubmit, useNavigation, useLocation } from "react-router";
 import { ObjectId } from "mongodb";
 import { useEffect, useState, useRef, useCallback, memo } from "react";
 import clientPromise from "../db.server";
+import { highlightRange, serializeRange, deserializeRange } from "../utils/dom-annotations";
+import type { SerializedRange } from "../utils/dom-annotations";
 
 export function meta({ data }: Route.MetaArgs) {
     if (!data || !data.doc) {
@@ -107,12 +109,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 // Memoize the content to prevent React from re-setting innerHTML on parent re-renders
 const ArticleContent = memo(({ html }: { html: string }) => (
     <div
+        id="article-content"
         className="prose prose-lg prose-slate font-serif
                    prose-headings:font-sans prose-headings:font-bold prose-headings:text-gray-900
                    prose-p:text-gray-800 prose-p:leading-relaxed
                    prose-a:text-blue-600 prose-a:no-underline hover:prose-a:underline
                    prose-img:rounded-xl prose-img:shadow-md
-                   w-full max-w-none"
+                   w-full max-w-none relative" // Added relative for positioning
         dangerouslySetInnerHTML={{ __html: html }}
     />
 ));
@@ -196,8 +199,119 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
     const [page, setPage] = useState(1);
     const [isRestored, setIsRestored] = useState(false);
 
+    // Annotation UI State
+    const [activeAnnotation, setActiveAnnotation] = useState<{ id: string, rect: DOMRect } | null>(null);
+    const [editingComment, setEditingComment] = useState("");
+
+
     // Cache Key
     const cacheKey = `${collectionName}_${searchTerm || 'def'}_sidebarData`;
+
+    // Annotation State
+    const [annotations, setAnnotations] = useState<any[]>([]);
+    const [selection, setSelection] = useState<{ range: Range, rect: DOMRect } | null>(null);
+    const annotationFetcher = useFetcher();
+    const articleRef = useRef<HTMLDivElement>(null);
+
+    // Fetch annotations on load
+    useEffect(() => {
+        if (doc._id) {
+            annotationFetcher.load(`/api/annotations?documentId=${doc._id}&collectionName=${collectionName}`);
+        }
+    }, [doc._id, collectionName]);
+
+    // Update state when fetcher returns
+    useEffect(() => {
+        if (!annotationFetcher.data) return;
+
+        const data = annotationFetcher.data as any;
+
+        // If we received a list of annotations (from loader)
+        if (data.annotations) {
+            setAnnotations(data.annotations);
+        }
+
+        // If an action succeeded (create/update/delete), reload the list
+        // We check mutation status to avoid infinite loops if load returns success (unlikely)
+        // But better: check if it's the result of a submission.
+        // Actually, trigger load if data.success is true.
+        if (data.success) {
+            annotationFetcher.load(`/api/annotations?documentId=${doc._id}&collectionName=${collectionName}`);
+        }
+    }, [annotationFetcher.data, doc._id, collectionName]);
+
+    // Apply highlights when annotations load or doc changes
+    useEffect(() => {
+        if (annotations.length > 0 && articleRef.current) {
+            console.log("Applying annotations:", annotations.length);
+            annotations.forEach(ann => {
+                if (articleRef.current?.querySelector(`mark[data-annotation-id="${ann._id}"]`)) {
+                    return;
+                }
+                const range = deserializeRange(ann.range, articleRef.current!);
+                if (range) {
+                    highlightRange(range, ann._id, ann.color);
+                } else {
+                    console.error("Failed to deserialize range for annotation", ann._id);
+                }
+            });
+        } else {
+            // console.log("No annotations to apply or articleRef missing", { count: annotations.length, ref: !!articleRef.current });
+        }
+    }, [annotations, doc._id]);
+
+    // Handle user selection
+    useEffect(() => {
+        const handleSelectionChange = () => {
+            const sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+                setSelection(null);
+                return;
+            }
+
+            const range = sel.getRangeAt(0);
+            if (articleRef.current && articleRef.current.contains(range.commonAncestorContainer)) {
+                const rect = range.getBoundingClientRect();
+                setSelection({ range, rect });
+            } else {
+                setSelection(null); // Clicked outside
+            }
+        };
+
+        document.addEventListener("selectionchange", handleSelectionChange); // or mouseup
+        return () => document.removeEventListener("selectionchange", handleSelectionChange);
+    }, []);
+
+    const saveAnnotation = (color: string) => {
+        if (!selection || !articleRef.current) return;
+
+        const serialized = serializeRange(selection.range, articleRef.current);
+        if (!serialized) return;
+
+        const range = selection.range; // Keep ref before clearing
+        setSelection(null); // Hide toolbar
+
+        // Optimistic UI? We need an ID for optimistic UI. 
+        // For now, let's just submit and wait for re-fetch or use returned data?
+        // Better: submit, and in action we return the new annotation.
+
+        annotationFetcher.submit(
+            {
+                intent: "create",
+                documentId: doc._id,
+                collectionName,
+                range: JSON.stringify(serialized),
+                text: serialized.text,
+                color,
+                comment: ""
+            },
+            { method: "post", action: "/api/annotations" }
+        );
+
+        // Temporarily highlight (will be replaced by real one or persisted)
+        // highlightRange(range, "temp-optimistic", color); 
+        // We'll let the fetcher revalidation handle it to ensure ID is correct.
+    };
 
 
 
@@ -253,7 +367,6 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
     useEffect(() => {
         if (fetcher.data && fetcher.data.sidebarDocuments) {
             setDocs(prevDocs => {
-                // Return unique docs (append)
                 const newDocs = fetcher.data!.sidebarDocuments.filter(
                     newDoc => !prevDocs.some(existing => existing.id === newDoc.id)
                 );
@@ -261,6 +374,75 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             });
         }
     }, [fetcher.data]);
+
+    // Handle clicks on annotations
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (target.classList.contains("annotation-highlight")) {
+                const id = target.dataset.annotationId;
+                if (id) {
+                    // Find the annotation data to prepopulate comment
+                    const ann = annotations.find(a => a._id === id);
+                    if (ann) {
+                        setEditingComment(ann.comment || "");
+                        setActiveAnnotation({
+                            id,
+                            rect: target.getBoundingClientRect()
+                        });
+                        setSelection(null); // Clear text selection toolbar
+                        e.stopPropagation(); // Prevent other clicks
+                    }
+                }
+            } else if (!target.closest(".annotation-popover")) {
+                // Click outside popover closes it
+                setActiveAnnotation(null);
+            }
+        };
+
+        if (articleRef.current) {
+            articleRef.current.addEventListener("click", handleClick);
+        }
+        return () => {
+            articleRef.current?.removeEventListener("click", handleClick);
+        };
+    }, [annotations]);
+
+    const updateComment = () => {
+        if (!activeAnnotation) return;
+        annotationFetcher.submit(
+            {
+                intent: "update",
+                annotationId: activeAnnotation.id,
+                comment: editingComment
+            },
+            { method: "post", action: "/api/annotations" }
+        );
+        setActiveAnnotation(null);
+    };
+
+    const deleteAnnotation = () => {
+        if (!activeAnnotation) return;
+        annotationFetcher.submit(
+            {
+                intent: "delete",
+                annotationId: activeAnnotation.id
+            },
+            { method: "post", action: "/api/annotations" }
+        );
+
+        // Optimistically remove highlight
+        const highlights = articleRef.current?.querySelectorAll(`mark[data-annotation-id="${activeAnnotation.id}"]`);
+        highlights?.forEach(el => {
+            const parent = el.parentNode;
+            if (parent) {
+                while (el.firstChild) parent.insertBefore(el.firstChild, el);
+                parent.removeChild(el);
+            }
+        });
+
+        setActiveAnnotation(null);
+    };
 
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [matchesMobile, setMatchesMobile] = useState(false); // Helper to track if we are on mobile
@@ -296,7 +478,6 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
         setIsSidebarOpen(isOpen);
         sessionStorage.setItem("sidebarOpen", String(isOpen));
     };
-
 
 
     return (
@@ -462,7 +643,65 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
 
                     <main className="px-6 pb-20">
                         {doc.article?.body_html ? (
-                            <ArticleContent html={doc.article.body_html} />
+                            <div ref={articleRef} className="relative">
+                                <ArticleContent html={doc.article.body_html} />
+                                {selection && (
+                                    <div
+                                        style={{
+                                            position: 'fixed',
+                                            top: `${selection.rect.top - 40}px`,
+                                            left: `${selection.rect.left}px`,
+                                            zIndex: 50
+                                        }}
+                                        className="bg-white shadow-xl rounded-lg border border-gray-200 p-1 flex gap-1"
+                                    >
+                                        <button onClick={() => saveAnnotation("#fef9c3")} className="w-6 h-6 rounded-full bg-[#fef9c3] hover:scale-110 transition-transform border border-gray-200" title="Yellow"></button>
+                                        <button onClick={() => saveAnnotation("#dcfce7")} className="w-6 h-6 rounded-full bg-[#dcfce7] hover:scale-110 transition-transform border border-gray-200" title="Green"></button>
+                                        <button onClick={() => saveAnnotation("#fce7f3")} className="w-6 h-6 rounded-full bg-[#fce7f3] hover:scale-110 transition-transform border border-gray-200" title="Pink"></button>
+                                    </div>
+                                )}
+
+                                {activeAnnotation && (
+                                    <div
+                                        className="annotation-popover fixed z-50 bg-white shadow-2xl rounded-lg border border-gray-200 p-4 w-80 ring-1 ring-gray-900/5"
+                                        style={{
+                                            top: `${activeAnnotation.rect.bottom + 10}px`,
+                                            left: `${Math.min(window.innerWidth - 320, Math.max(10, activeAnnotation.rect.left))}px`
+                                        }}
+                                    >
+                                        <h4 className="font-bold text-gray-800 mb-2 text-sm">Annotation</h4>
+                                        <textarea
+                                            className="w-full border border-gray-300 rounded-md p-3 text-sm mb-3 min-h-[100px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none bg-gray-50 focus:bg-white transition-colors text-gray-900"
+                                            placeholder="Write your comment here..."
+                                            value={editingComment}
+                                            onChange={(e) => setEditingComment(e.target.value)}
+                                            autoFocus
+                                        />
+                                        <div className="flex justify-between items-center">
+                                            <button
+                                                onClick={deleteAnnotation}
+                                                className="text-red-500 text-xs hover:underline"
+                                            >
+                                                Delete
+                                            </button>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => setActiveAnnotation(null)}
+                                                    className="px-3 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    onClick={updateComment}
+                                                    className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                                                >
+                                                    Save
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         ) : (
                             <div className="w-full">
                                 <pre className="bg-gray-100 text-gray-800 p-4 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed border border-gray-200">

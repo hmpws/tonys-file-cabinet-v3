@@ -1,0 +1,97 @@
+import type { Route } from "./+types/api.annotations";
+import { data } from "react-router";
+import { ObjectId } from "mongodb";
+import clientPromise from "../db.server";
+import { requireUser } from "../sessions.server";
+
+export async function loader({ request }: Route.LoaderArgs) {
+    await requireUser(request);
+    const url = new URL(request.url);
+    const documentId = url.searchParams.get("documentId");
+    const collectionName = url.searchParams.get("collectionName");
+
+    if (!documentId || !collectionName) {
+        throw data({ error: "Missing documentId or collectionName" }, { status: 400 });
+    }
+
+    const client = await clientPromise;
+    const db = client.db("substack");
+
+    const annotations = await db.collection("annotations").find({
+        documentId,
+        collectionName
+    }).toArray();
+
+    return { annotations: annotations.map(a => ({ ...a, _id: a._id.toString() })) };
+}
+
+export async function action({ request }: Route.ActionArgs) {
+    const userId = await requireUser(request);
+    const formData = await request.formData();
+    const intent = formData.get("intent");
+
+    const client = await clientPromise;
+    const db = client.db("substack");
+    const collection = db.collection("annotations");
+
+    if (intent === "create") {
+        const documentId = formData.get("documentId") as string;
+        const collectionName = formData.get("collectionName") as string;
+        const range = formData.get("range") as string;
+        const text = formData.get("text") as string; // Selected text
+        const comment = formData.get("comment") as string;
+        const color = formData.get("color") as string || "#fef9c3";
+
+        if (!documentId || !collectionName || !range) {
+            throw data({ error: "Missing required fields" }, { status: 400 });
+        }
+
+        const newAnnotation = {
+            documentId,
+            collectionName,
+            range: JSON.parse(range),
+            text,
+            comment,
+            color,
+            userId: userId, // Corrected from user.id
+            username: "User", // Placeholder, we don't have username in session
+            createdAt: new Date()
+        };
+
+        const result = await collection.insertOne(newAnnotation);
+
+        return {
+            success: true,
+            annotation: { ...newAnnotation, _id: result.insertedId.toString() }
+        };
+    }
+
+    if (intent === "delete") {
+        const annotationId = formData.get("annotationId") as string;
+        if (!annotationId) return data({ error: "Missing ID" }, { status: 400 });
+
+        await collection.deleteOne({
+            _id: new ObjectId(annotationId),
+            userId: userId // Ensure ownership
+        });
+
+        return { success: true, deletedId: annotationId };
+    }
+
+    if (intent === "update") {
+        const annotationId = formData.get("annotationId") as string;
+        const comment = formData.get("comment") as string;
+        // Optionally allow updating color or other fields
+
+        if (!annotationId) return data({ error: "Missing ID" }, { status: 400 });
+
+        await collection.updateOne(
+            { _id: new ObjectId(annotationId), userId: userId },
+            { $set: { comment, updatedAt: new Date() } }
+        );
+
+        return { success: true, annotationId };
+    }
+
+    throw data({ error: "Invalid intent" }, { status: 400 });
+}
