@@ -849,7 +849,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
 
                     <main className="px-6 pb-20 print:pb-0">
                         {/* Unified Article Wrapper (Target for Annotations) */}
-                        <div ref={articleRef} className="relative group mx-auto print:mx-0 md:grid md:grid-cols-[minmax(0,1fr)_300px] md:gap-12 print:grid print:grid-cols-[minmax(0,1fr)_220px] print:gap-8 max-w-[1150px]">
+                        <div ref={articleRef} className="relative group mx-auto print:mx-0 md:grid md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_300px] md:gap-6 lg:gap-12 print:grid print:grid-cols-[minmax(0,1fr)_200px] print:gap-6 max-w-[1150px] print:max-w-none">
 
                             {/* Content Column */}
                             <div className="md:min-w-0">
@@ -948,7 +948,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                         <div
                                             key={ann._id}
                                             data-annotation-id={ann._id}
-                                            className={`side-note-card left-0 w-64 print:w-full p-3 bg-white border border-gray-100 shadow-sm rounded-lg text-sm group-hover/note:shadow-md transition-all duration-300 pointer-events-auto cursor-pointer flex gap-3 print:border-gray-300 print:shadow-none bg-white ${isGeneral ? "sticky top-24 z-50 print:!absolute print:!top-[var(--print-top)] print:!mt-0" : "absolute"}`}
+                                            className={`side-note-card left-0 w-full p-3 bg-white border border-gray-100 shadow-sm rounded-lg text-sm group-hover/note:shadow-md transition-all duration-300 pointer-events-auto cursor-pointer flex gap-3 print:border-gray-300 print:shadow-none bg-white ${isGeneral ? "sticky top-24 z-50 print:!absolute print:!top-[var(--print-top)] print:!mt-0" : "absolute"}`}
                                             style={{
                                                 borderLeft: `4px solid ${ann.color || '#fef9c3'}`,
                                                 ...(isGeneral
