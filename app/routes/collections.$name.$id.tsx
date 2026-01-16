@@ -1,7 +1,7 @@
 import type { Route } from "./+types/collections.$name.$id";
 import { Link, Form, useSearchParams, useFetcher, useSubmit, useNavigation, useLocation } from "react-router";
 import { ObjectId } from "mongodb";
-import { useEffect, useState, useRef, useCallback, memo } from "react";
+import { useEffect, useState, useRef, useCallback, memo, useLayoutEffect } from "react";
 import clientPromise from "../db.server";
 import { highlightRange, serializeRange, deserializeRange } from "../utils/dom-annotations";
 import type { SerializedRange } from "../utils/dom-annotations";
@@ -12,9 +12,17 @@ export function meta({ data }: Route.MetaArgs) {
     }
     const title = data.doc.article?.title || "Untitled Document";
     const articleId = data.doc.article?.id;
+    const collectionName = data.collectionName;
+    let date = "";
+    if (data.doc.article?.post_date) {
+        const d = new Date(data.doc.article.post_date);
+        date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    const fullTitle = date ? `${collectionName} - ${date} - ${title}` : `${collectionName} - ${title}`;
 
     return [
-        { title: `${title} - ${data.collectionName}` },
+        { title: fullTitle },
         { name: "description", content: data.doc.article?.subtitle || "View document details" },
         ...(data.collectionName && articleId ? [{
             name: "dc.identifier",
@@ -202,6 +210,13 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
     // Annotation UI State
     const [activeAnnotation, setActiveAnnotation] = useState<{ id: string, rect: DOMRect } | null>(null);
     const [editingComment, setEditingComment] = useState("");
+    const [editingTags, setEditingTags] = useState<string[]>([]);
+
+    // Ref for Autosave Access
+    const editingStateRef = useRef({ activeAnnotation, editingComment, editingTags });
+    useEffect(() => {
+        editingStateRef.current = { activeAnnotation, editingComment, editingTags };
+    }, [activeAnnotation, editingComment, editingTags]);
 
 
     // Cache Key
@@ -212,6 +227,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
     const [selection, setSelection] = useState<{ range: Range, rect: DOMRect } | null>(null);
     const annotationFetcher = useFetcher();
     const articleRef = useRef<HTMLDivElement>(null);
+    const titleRef = useRef<HTMLHeadingElement>(null);
 
     // Fetch annotations on load
     useEffect(() => {
@@ -240,47 +256,260 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
         }
     }, [annotationFetcher.data, doc._id, collectionName]);
 
+    // Side Note State
+    const [positionedAnnotations, setPositionedAnnotations] = useState<any[]>([]);
+
     // Apply highlights when annotations load or doc changes
     useEffect(() => {
-        if (annotations.length > 0 && articleRef.current) {
-            console.log("Applying annotations:", annotations.length);
+        if (!articleRef.current) return;
+
+        // 1. Highlight and Collect Positions
+        const newPositions: any[] = [];
+
+        if (annotations.length > 0) {
             annotations.forEach(ann => {
-                if (articleRef.current?.querySelector(`mark[data-annotation-id="${ann._id}"]`)) {
-                    return;
-                }
-                const range = deserializeRange(ann.range, articleRef.current!);
-                if (range) {
-                    highlightRange(range, ann._id, ann.color);
-                } else {
-                    console.error("Failed to deserialize range for annotation", ann._id);
+                try {
+                    // Skip general notes in this loop (handled separately)
+                    if (ann.range === "null" || !ann.range) return;
+
+                    // Check if already applied
+                    let mark = articleRef.current?.querySelector(`mark[data-annotation-id="${ann._id}"]`) as HTMLElement;
+
+                    if (!mark) {
+                        const range = deserializeRange(ann.range, articleRef.current!);
+                        if (range) {
+                            const marks = highlightRange(range, ann._id, ann.color);
+                            if (marks.length > 0) mark = marks[0];
+                        } else {
+                            // console.error("Failed to deserialize range", ann._id);
+                        }
+                    }
+
+                    if (mark) {
+                        let top = mark.offsetTop;
+                        let parent = mark.offsetParent as HTMLElement;
+                        let limit = 0;
+                        while (parent && parent !== articleRef.current && articleRef.current?.contains(parent) && limit < 50) {
+                            top += parent.offsetTop;
+                            parent = parent.offsetParent as HTMLElement;
+                            limit++;
+                        }
+
+                        newPositions.push({
+                            ...ann,
+                            top
+                        });
+                    }
+                } catch (err) {
+                    console.error("Error processing annotation", ann._id, err);
                 }
             });
-        } else {
-            // console.log("No annotations to apply or articleRef missing", { count: annotations.length, ref: !!articleRef.current });
         }
-    }, [annotations, doc._id]);
 
-    // Handle user selection
-    useEffect(() => {
-        const handleSelectionChange = () => {
-            const sel = window.getSelection();
-            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
-                setSelection(null);
-                return;
-            }
+        // Handle General Document Note (Always at top, aligned with Title)
+        let generalTop = 0;
+        if (titleRef.current && articleRef.current) {
+            const titleRect = titleRef.current.getBoundingClientRect();
+            const articleRect = articleRef.current.getBoundingClientRect();
+            // Calculate offset: How far up is the title from the article body?
+            generalTop = titleRect.top - articleRect.top;
+        }
 
-            const range = sel.getRangeAt(0);
-            if (articleRef.current && articleRef.current.contains(range.commonAncestorContainer)) {
-                const rect = range.getBoundingClientRect();
-                setSelection({ range, rect });
-            } else {
-                setSelection(null); // Clicked outside
-            }
+        const generalAnnotation = annotations.find(a => !a.range || a.range === "null");
+        const placeholderGeneral = {
+            _id: "general-placeholder",
+            top: generalTop,
+            comment: "",
+            color: "#e5e7eb",
+            isGeneral: true
         };
 
-        document.addEventListener("selectionchange", handleSelectionChange); // or mouseup
-        return () => document.removeEventListener("selectionchange", handleSelectionChange);
+        if (generalAnnotation) {
+            newPositions.push({ ...generalAnnotation, top: generalTop, isGeneral: true });
+        } else {
+            newPositions.push(placeholderGeneral);
+        }
+
+        // 2. Sort by Top Position
+        newPositions.sort((a, b) => a.top - b.top);
+
+        // Assign Indices (0 for general, 1+ for others)
+        const labeledPositions = newPositions.map((p, i) => {
+            if (p.range && p._id.startsWith("temp-") === false) {
+                const mark = articleRef.current?.querySelector(`mark[data-annotation-id="${p._id}"]`) as HTMLElement;
+                if (mark) {
+                    mark.setAttribute("data-annotation-index", String(i));
+                }
+            }
+            return { ...p, index: i };
+        });
+
+        setPositionedAnnotations(labeledPositions);
+
+    }, [annotations, doc._id]);
+
+    // Layout Collision Detection (Measure rendered heights)
+    const [visualOffsets, setVisualOffsets] = useState<Record<string, number>>({});
+
+    useLayoutEffect(() => {
+        if (positionedAnnotations.length === 0) return;
+
+        const nodes = Array.from(document.querySelectorAll('.side-note-card')) as HTMLElement[];
+        if (nodes.length === 0) return;
+
+        let lastBottom = -Infinity; // Allow starting from negative positions (Title area)
+        const newOffsets: Record<string, number> = {};
+        let changed = false;
+
+        // We assume nodes are rendered in order of positionedAnnotations (sorted by top)
+        // But to be safe, let's map positionedAnnotations to nodes
+        positionedAnnotations.forEach(ann => {
+            const node = nodes.find(n => n.dataset.annotationId === ann._id);
+            if (!node) return;
+
+            const targetTop = ann.top;
+            const height = node.offsetHeight;
+
+            // Visual Top must be at least targetTop, but also below lastBottom + gap
+            let visualTop = targetTop;
+            if (visualTop < lastBottom + 15) {
+                visualTop = lastBottom + 15;
+            }
+
+            if (visualTop !== visualOffsets[ann._id]) {
+                changed = true;
+            }
+
+            newOffsets[ann._id] = visualTop;
+            lastBottom = visualTop + height;
+        });
+
+        if (changed) {
+            setVisualOffsets(newOffsets);
+        }
+    }, [positionedAnnotations, visualOffsets]);
+
+    // Autosave & Global Click Handler
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            const { activeAnnotation, editingComment, editingTags } = editingStateRef.current;
+
+            // 1. Check for Autosave (Clicking outside popover)
+            if (activeAnnotation && !target.closest(".annotation-popover")) {
+                const isTemp = activeAnnotation.id.startsWith("temp-");
+                // Only autosave non-temp notes to prevent crashes, or upsertGeneral handles temp
+                if (!isTemp || activeAnnotation.id === "general-placeholder") {
+                    performSave(activeAnnotation.id, editingComment, editingTags);
+                }
+
+                // Close if we clicked empty space
+                if (!target.classList.contains("annotation-highlight") && !target.closest(".side-note-card")) {
+                    setActiveAnnotation(null);
+                    setEditingTags([]);
+                }
+            }
+        };
+        document.addEventListener("click", handleClick);
+        return () => document.removeEventListener("click", handleClick);
+    }, []); // Empty dep array as we use ref
+
+    // Handle Text Selection (Restored)
+    useEffect(() => {
+        const handleSelection = () => {
+            const selection = window.getSelection();
+            if (selection && !selection.isCollapsed && selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                // Verify range is inside articleRef
+                if (articleRef.current && articleRef.current.contains(range.commonAncestorContainer)) {
+                    const rect = range.getBoundingClientRect();
+                    setSelection({ range, rect });
+                    return;
+                }
+            }
+            setSelection(null);
+        };
+
+        // Debounce or just use proper events
+        document.addEventListener("selectionchange", handleSelection);
+        // Also listen to mouseup to be sure? selectionchange is usually enough but flaky on some browsers.
+        // Actually selectionchange on document is best.
+        return () => document.removeEventListener("selectionchange", handleSelection);
     }, []);
+
+    // Reusable Submit Function (Updates State + Fetcher)
+    const performSave = useCallback((id: string, comment: string, tags: string[]) => {
+        const isGeneral = id === "general-placeholder" || id.startsWith("temp-general");
+
+        // Optimistic Update
+        const optimisticTags = [...tags];
+
+        if (isGeneral) {
+            const tempId = "temp-general-" + Date.now();
+            const newAnn = {
+                _id: tempId,
+                documentId: doc._id,
+                collectionName,
+                range: null,
+                text: "",
+                color: "#e5e7eb",
+                comment: comment,
+                tags: optimisticTags,
+                isGeneral: true
+            };
+            // Replace placeholder or add
+            setAnnotations(prev => {
+                // If we already have a temp general, replace it? Or just push.
+                // Filter out old temp generals to avoid duplicates in optimistic state
+                const filtered = prev.filter(a => !a.isGeneral || a.range);
+                return [...filtered, newAnn];
+            });
+
+            annotationFetcher.submit({
+                intent: "upsertGeneral",
+                documentId: doc._id,
+                collectionName,
+                comment: comment,
+                tags: JSON.stringify(optimisticTags)
+            }, { method: "post", action: "/api/annotations" });
+
+        } else {
+            // Highlight Update
+            if (id.startsWith("temp-")) return; // Guard against updating temp highlights
+
+            setAnnotations(prev => prev.map(a => {
+                if (a._id === id) {
+                    return { ...a, comment: comment, tags: optimisticTags };
+                }
+                return a;
+            }));
+
+            annotationFetcher.submit({
+                intent: "update",
+                annotationId: id,
+                comment: comment,
+                tags: JSON.stringify(optimisticTags)
+            }, { method: "post", action: "/api/annotations" });
+        }
+    }, [doc._id, collectionName]);
+
+    // Cleanup old click handler logic if any remains.
+    // We removed separate click handler for highlights? NO.
+    // We still have `articleRef` handler for Highlight Clicks at line 442. -> SHOULD REMOVE IT if using global document click?
+    // Actually, line 442 logic handles opening popover.
+    // The previous implementation had `articleRef.current.addEventListener`.
+    // My new `document` logic handles Close/Autosave.
+    // I need to ensure they play nice.
+    // If I click highlight:
+    // 1. `document` listener (Autosave) -> saves OLD.
+    // 2. `articleRef` listener (Open) -> opens NEW.
+    // This order works.
+
+    const saveGeneralNote = (comment: string) => {
+        performSave("general-placeholder", comment, editingTags);
+        setActiveAnnotation(null);
+        setEditingTags([]);
+    };
 
     const saveAnnotation = (color: string) => {
         if (!selection || !articleRef.current) return;
@@ -382,10 +611,14 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             if (target.classList.contains("annotation-highlight")) {
                 const id = target.dataset.annotationId;
                 if (id) {
-                    // Find the annotation data to prepopulate comment
                     const ann = annotations.find(a => a._id === id);
                     if (ann) {
+                        // Check if popover is already open for THIS annotation?
+                        // If so, do nothing.
+                        if (activeAnnotation?.id === id) return;
+
                         setEditingComment(ann.comment || "");
+                        setEditingTags(ann.tags || []);
                         setActiveAnnotation({
                             id,
                             rect: target.getBoundingClientRect()
@@ -394,10 +627,8 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                         e.stopPropagation(); // Prevent other clicks
                     }
                 }
-            } else if (!target.closest(".annotation-popover")) {
-                // Click outside popover closes it
-                setActiveAnnotation(null);
             }
+            // Removed logic for closing popover (handled by global autosave)
         };
 
         if (articleRef.current) {
@@ -406,20 +637,31 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
         return () => {
             articleRef.current?.removeEventListener("click", handleClick);
         };
-    }, [annotations]);
+    }, [annotations, activeAnnotation]); // Added activeAnnotation dep to check current open
 
+    // 6. Update updateComment to call performSave
     const updateComment = () => {
         if (!activeAnnotation) return;
-        annotationFetcher.submit(
-            {
-                intent: "update",
-                annotationId: activeAnnotation.id,
-                comment: editingComment
-            },
-            { method: "post", action: "/api/annotations" }
-        );
+        performSave(activeAnnotation.id, editingComment, editingTags);
         setActiveAnnotation(null);
+        setEditingTags([]);
     };
+
+    const handleSave = () => {
+        if (activeAnnotation?.id.startsWith("temp-") && activeAnnotation.id !== "general-placeholder" && !activeAnnotation.id.startsWith("temp-general")) {
+            // Prevent manual save of temp highlights? Actually allow it if user wants?
+            // But performSave guards it.
+            return;
+        }
+
+        if (activeAnnotation?.id === "general-placeholder" || activeAnnotation?.id.startsWith("temp-general")) {
+            performSave("general-placeholder", editingComment, editingTags); // Explicitly mark as general
+            setActiveAnnotation(null);
+            setEditingTags([]);
+        } else {
+            updateComment();
+        }
+    }
 
     const deleteAnnotation = () => {
         if (!activeAnnotation) return;
@@ -587,64 +829,115 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             </aside >
 
             {/* Main Content */}
-            < div className="flex-1 order-1 md:order-2 bg-white min-h-screen p-4 flex flex-col items-center" >
-                <div className="max-w-[800px] w-full">
+            <div className="flex-1 order-1 md:order-2 bg-white min-h-screen p-4 flex flex-col items-center overflow-x-hidden print:overflow-visible">
+                <div className="max-w-[1600px] w-full transition-all duration-300 print:max-w-none print:w-full">
                     <header className="pt-12 pb-8 px-6">
-                        <p className="text-blue-600 mb-4 inline-block font-medium">
-                            {collectionName}
-                        </p>
-                        <h1 className="text-4xl font-bold text-gray-900 leading-tight mb-2">
-                            {doc.article?.title || "Untitled Document"}
-                        </h1>
-                        {doc.article?.subtitle && (
-                            <h2 className="text-xl text-gray-500 font-serif leading-relaxed mb-4">
-                                {doc.article.subtitle}
-                            </h2>
-                        )}
+                        <div className="max-w-[800px] mx-auto print:mx-0">
+                            <p className="text-blue-600 mb-4 inline-block font-medium">
+                                {collectionName}
+                            </p>
+                            <h1 ref={titleRef} className="text-4xl font-bold text-gray-900 leading-tight mb-2">
+                                {doc.article?.title || "Untitled Document"}
+                            </h1>
+                            {doc.article?.subtitle && (
+                                <h2 className="text-xl text-gray-500 font-serif leading-relaxed mb-4">
+                                    {doc.article.subtitle}
+                                </h2>
+                            )}
 
-                        {doc.article?.audience && (
-                            <div className="mb-4">
-                                <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full uppercase tracking-wider font-semibold">
-                                    Audience: {doc.article.audience}
-                                </span>
+                            {doc.article?.audience && (
+                                <div className="mb-4">
+                                    <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full uppercase tracking-wider font-semibold">
+                                        Audience: {doc.article.audience}
+                                    </span>
+                                </div>
+                            )}
+
+                            <div className="flex items-center text-gray-500 text-sm border-t border-gray-100 pt-4 mt-4">
+                                {doc.article?.post_date && (
+                                    <time dateTime={doc.article.post_date}>
+                                        {new Date(doc.article.post_date).toLocaleDateString("en-US", {
+                                            year: 'numeric',
+                                            month: 'long',
+                                            day: 'numeric'
+                                        })}
+                                    </time>
+                                )}
                             </div>
-                        )}
 
-                        <div className="flex items-center text-gray-500 text-sm border-t border-gray-100 pt-4 mt-4">
-                            {doc.article?.post_date && (
-                                <time dateTime={doc.article.post_date}>
-                                    {new Date(doc.article.post_date).toLocaleDateString("en-US", {
-                                        year: 'numeric',
-                                        month: 'long',
-                                        day: 'numeric'
-                                    })}
-                                </time>
+                            {/* Media Section */}
+                            {(doc.video || doc.audio || (doc.media && doc.media.length > 0)) && (
+                                <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                                    <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Media Files</h3>
+                                    <div className="space-y-2 text-sm text-gray-700">
+                                        {doc.video && (
+                                            <MediaLink label="Video" filename={doc.video} collectionName={collectionName} />
+                                        )}
+                                        {doc.audio && (
+                                            <MediaLink label="Audio" filename={doc.audio} collectionName={collectionName} />
+                                        )}
+                                        {doc.media?.map((m: string, i: number) => (
+                                            <MediaLink key={i} label="Media" filename={m} collectionName={collectionName} />
+                                        ))}
+                                    </div>
+                                </div>
                             )}
                         </div>
-
-                        {/* Media Section */}
-                        {(doc.video || doc.audio || (doc.media && doc.media.length > 0)) && (
-                            <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
-                                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Media Files</h3>
-                                <div className="space-y-2 text-sm text-gray-700">
-                                    {doc.video && (
-                                        <MediaLink label="Video" filename={doc.video} collectionName={collectionName} />
-                                    )}
-                                    {doc.audio && (
-                                        <MediaLink label="Audio" filename={doc.audio} collectionName={collectionName} />
-                                    )}
-                                    {doc.media?.map((m: string, i: number) => (
-                                        <MediaLink key={i} label="Media" filename={m} collectionName={collectionName} />
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                     </header>
 
-                    <main className="px-6 pb-20">
+                    <main className="px-6 pb-20 print:pb-0">
                         {doc.article?.body_html ? (
-                            <div ref={articleRef} className="relative">
-                                <ArticleContent html={doc.article.body_html} />
+                            <div className="relative group max-w-[800px] mx-auto print:mx-0">
+                                <div ref={articleRef}>
+                                    <ArticleContent html={doc.article.body_html} />
+                                </div>
+
+                                {/* Side Notes (Cliff Notes) - Desktop & Print */}
+                                <div className="hidden xl:block print:block absolute top-0 left-[820px] w-64 h-full pointer-events-none">
+                                    {positionedAnnotations.map(ann => (
+                                        <div
+                                            key={ann._id}
+                                            data-annotation-id={ann._id}
+                                            className="side-note-card absolute left-0 w-64 p-3 bg-white border border-gray-100 shadow-sm rounded-lg text-sm group-hover/note:shadow-md transition-all duration-300 pointer-events-auto cursor-pointer flex gap-3 print:border-gray-300 print:shadow-none bg-white"
+                                            style={{
+                                                top: `${visualOffsets[ann._id] ?? ann.top}px`,
+                                                borderLeft: `4px solid ${ann.color || '#fef9c3'}`
+                                            }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveAnnotation({ id: ann._id, rect: (e.target as HTMLElement).getBoundingClientRect() });
+                                                setEditingComment(ann.comment || "");
+                                                setEditingTags(ann.tags || []);
+                                            }}
+                                        >
+                                            {!ann.isGeneral && (
+                                                <div className="flex-shrink-0 font-bold text-gray-400 select-none">
+                                                    {ann.index}
+                                                </div>
+                                            )}
+                                            <div className="flex-1 min-w-0">
+                                                {/* Only show tags for General Note (Index 0) */}
+                                                {(ann.isGeneral || !ann.range) && ann.tags && ann.tags.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 mb-2">
+                                                        {ann.tags.map((tag: string, i: number) => (
+                                                            <span key={i} className="annotation-tag inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800 border border-transparent print:border-gray-300 print:bg-white">
+                                                                {tag}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {ann.comment ? (
+                                                    <div className="text-gray-800 min-w-0 break-words">{ann.comment}</div>
+                                                ) : (
+                                                    <div className="text-gray-400 italic text-xs">
+                                                        {ann.isGeneral ? "Add a general note..." : "No comment"}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
                                 {selection && (
                                     <div
                                         style={{
@@ -653,7 +946,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                             left: `${selection.rect.left}px`,
                                             zIndex: 50
                                         }}
-                                        className="bg-white shadow-xl rounded-lg border border-gray-200 p-1 flex gap-1"
+                                        className="bg-white shadow-xl rounded-lg border border-gray-200 p-1 flex gap-1 print:hidden"
                                     >
                                         <button onClick={() => saveAnnotation("#fef9c3")} className="w-6 h-6 rounded-full bg-[#fef9c3] hover:scale-110 transition-transform border border-gray-200" title="Yellow"></button>
                                         <button onClick={() => saveAnnotation("#dcfce7")} className="w-6 h-6 rounded-full bg-[#dcfce7] hover:scale-110 transition-transform border border-gray-200" title="Green"></button>
@@ -661,46 +954,90 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                     </div>
                                 )}
 
-                                {activeAnnotation && (
-                                    <div
-                                        className="annotation-popover fixed z-50 bg-white shadow-2xl rounded-lg border border-gray-200 p-4 w-80 ring-1 ring-gray-900/5"
-                                        style={{
-                                            top: `${activeAnnotation.rect.bottom + 10}px`,
-                                            left: `${Math.min(window.innerWidth - 320, Math.max(10, activeAnnotation.rect.left))}px`
-                                        }}
-                                    >
-                                        <h4 className="font-bold text-gray-800 mb-2 text-sm">Annotation</h4>
-                                        <textarea
-                                            className="w-full border border-gray-300 rounded-md p-3 text-sm mb-3 min-h-[100px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none bg-gray-50 focus:bg-white transition-colors text-gray-900"
-                                            placeholder="Write your comment here..."
-                                            value={editingComment}
-                                            onChange={(e) => setEditingComment(e.target.value)}
-                                            autoFocus
-                                        />
-                                        <div className="flex justify-between items-center">
-                                            <button
-                                                onClick={deleteAnnotation}
-                                                className="text-red-500 text-xs hover:underline"
-                                            >
-                                                Delete
-                                            </button>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    onClick={() => setActiveAnnotation(null)}
-                                                    className="px-3 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded"
-                                                >
-                                                    Cancel
-                                                </button>
-                                                <button
-                                                    onClick={updateComment}
-                                                    className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
-                                                >
-                                                    Save
-                                                </button>
+                                {activeAnnotation && (() => {
+                                    const currentAnn = annotations.find(a => a._id === activeAnnotation.id);
+                                    // Check if it's general (placeholder or no range)
+                                    // Note: currentAnn might be undefined if we just created it optimistically and ID matching is tricky,
+                                    // but we handled optimistic updates by adding to annotations state.
+                                    const isGeneral = activeAnnotation.id === "general-placeholder" || (currentAnn && (!currentAnn.range || (currentAnn as any).isGeneral));
+
+                                    return (
+                                        <div
+                                            className="annotation-popover fixed z-50 bg-white shadow-2xl rounded-lg border border-gray-200 p-4 w-80 ring-1 ring-gray-900/5"
+                                            style={{
+                                                top: `${activeAnnotation.rect.bottom + 10}px`,
+                                                left: `${Math.min(window.innerWidth - 320, Math.max(10, activeAnnotation.rect.left))}px`
+                                            }}
+                                        >
+                                            <h4 className="font-bold text-gray-800 mb-2 text-sm">
+                                                {isGeneral ? "General Note" : "Annotation"}
+                                            </h4>
+
+                                            {isGeneral && (
+                                                <div className="mb-3">
+                                                    <input
+                                                        type="text"
+                                                        className="w-full border border-gray-300 rounded text-xs p-1.5 mb-2 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none text-gray-900 bg-white"
+                                                        placeholder="Add tags... (Enter or comma)"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter" || e.key === ",") {
+                                                                e.preventDefault();
+                                                                const val = (e.target as HTMLInputElement).value.trim();
+                                                                if (val && !editingTags.includes(val)) {
+                                                                    setEditingTags([...editingTags, val]);
+                                                                    (e.target as HTMLInputElement).value = "";
+                                                                }
+                                                            }
+                                                        }}
+                                                    />
+                                                    {editingTags.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {editingTags.map((tag, i) => (
+                                                                <span key={i} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                                    {tag}
+                                                                    <button
+                                                                        onClick={() => setEditingTags(editingTags.filter(t => t !== tag))}
+                                                                        className="ml-1 text-blue-600 hover:text-blue-900 focus:outline-none"
+                                                                    >
+                                                                        &times;
+                                                                    </button>
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            <textarea
+                                                className="w-full border border-gray-300 rounded-md p-3 text-sm mb-3 min-h-[100px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none bg-gray-50 focus:bg-white transition-colors text-gray-900"
+                                                placeholder="Write your comment here..."
+                                                value={editingComment}
+                                                onChange={(e) => setEditingComment(e.target.value)}
+                                                autoFocus
+                                            />
+                                            <div className="flex justify-between items-center">
+                                                {isGeneral ? (
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditingComment("");
+                                                            setEditingTags([]);
+                                                        }}
+                                                        className="text-gray-500 text-xs hover:underline"
+                                                    >
+                                                        Clear
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={deleteAnnotation}
+                                                        className="text-red-500 text-xs hover:underline"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                )}
+
                                             </div>
                                         </div>
-                                    </div>
-                                )}
+                                    );
+                                })()}
                             </div>
                         ) : (
                             <div className="w-full">
@@ -712,7 +1049,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
 
                         {/* Transcript Section */}
                         {doc.transcript && (
-                            <section className="mt-16 border-t border-gray-100 pt-10">
+                            <section className="mt-16 border-t border-gray-100 pt-10 max-w-[800px] mx-auto print:mx-0">
                                 <h3 className="text-2xl font-bold text-gray-900 mb-6">Transcript</h3>
                                 <div className="prose prose-lg prose-slate text-gray-700 leading-relaxed bg-gray-50 p-6 rounded-xl border border-gray-100 whitespace-pre-wrap font-serif w-full max-w-none">
                                     {doc.transcript}
@@ -722,7 +1059,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
 
                         {/* Comments Section */}
                         {(doc.comments?.comments?.length > 0 || doc.article?.comments?.length > 0) && (
-                            <section className="mt-16 border-t border-gray-100 pt-10">
+                            <section className="mt-16 border-t border-gray-100 pt-10 break-inside-avoid print:hidden max-w-[800px] mx-auto print:mx-0">
                                 <h3 className="text-2xl font-bold text-gray-900 mb-8">Comments</h3>
                                 <div className="space-y-8">
                                     {(doc.comments?.comments || doc.article?.comments || []).map((comment: any) => (

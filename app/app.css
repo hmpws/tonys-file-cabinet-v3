@@ -15,3 +15,61 @@ body {
     color-scheme: dark;
   }
 }
+
+@layer utilities {
+  .prose {
+    max-width: none;
+  }
+}
+
+@media print {
+  @page {
+    margin: 1cm;
+    margin-right: 3cm;
+  }
+
+  /* Force background colors to print */
+  mark.annotation-highlight,
+  .annotation-tag {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Show print-only comments */
+  .print-only-comments {
+    display: block !important;
+  }
+
+  /* Hide interactive elements */
+  .annotation-popover,
+  button {
+    display: none !important;
+  }
+}
+
+/* Annotation numbering */
+mark.annotation-highlight {
+  position: relative;
+}
+
+mark.annotation-highlight[data-annotation-index]::after {
+  content: attr(data-annotation-index);
+  position: absolute;
+  top: -0.2em;
+  right: -0.2em;
+  font-size: 0.6em;
+  font-weight: bold;
+  color: #9ca3af;
+  /* text-gray-400 */
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  width: auto;
+  height: auto;
+  padding: 0 1px;
+  z-index: 10;
+  line-height: 1;
+  pointer-events: none;
+  /* Optional: text shadow for better contrast against highlight color? */
+}

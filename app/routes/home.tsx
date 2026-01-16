@@ -30,7 +30,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     })
   );
 
-  return { collections: collections.filter((c) => c.name !== "annotations") };
+  return { collections: collections.filter((c) => c.name !== "annotations" && !c.name.startsWith("#")) };
 }
 
 export default function Home({ loaderData }: Route.ComponentProps) {

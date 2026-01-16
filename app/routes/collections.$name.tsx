@@ -29,7 +29,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     collectionsList.sort((a, b) => a.name.localeCompare(b.name));
 
     // Process collections for sidebar (similar to home.tsx but simpler)
-    const sidebarCollections = collectionsList.filter((c) => c.name !== "annotations").map(c => ({
+    const sidebarCollections = collectionsList.filter((c) => c.name !== "annotations" && !c.name.startsWith("#")).map(c => ({
         name: c.name
     }));
 

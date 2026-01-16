@@ -17,7 +17,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const client = await clientPromise;
     const db = client.db("substack");
 
-    const annotations = await db.collection("annotations").find({
+    const annotations = await db.collection("#annotations").find({
         documentId,
         collectionName
     }).toArray();
@@ -32,7 +32,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     const client = await clientPromise;
     const db = client.db("substack");
-    const collection = db.collection("annotations");
+    const collection = db.collection("#annotations");
 
     if (intent === "create") {
         const documentId = formData.get("documentId") as string;
@@ -41,18 +41,21 @@ export async function action({ request }: Route.ActionArgs) {
         const text = formData.get("text") as string; // Selected text
         const comment = formData.get("comment") as string;
         const color = formData.get("color") as string || "#fef9c3";
+        const tagsRaw = formData.get("tags") as string;
+        const tags = tagsRaw ? JSON.parse(tagsRaw) : [];
 
-        if (!documentId || !collectionName || !range) {
+        if (!documentId || !collectionName) {
             throw data({ error: "Missing required fields" }, { status: 400 });
         }
 
         const newAnnotation = {
             documentId,
             collectionName,
-            range: JSON.parse(range),
+            range: range && range !== "null" ? JSON.parse(range) : null,
             text,
             comment,
             color,
+            tags,
             userId: userId, // Corrected from user.id
             username: "User", // Placeholder, we don't have username in session
             createdAt: new Date()
@@ -81,16 +84,57 @@ export async function action({ request }: Route.ActionArgs) {
     if (intent === "update") {
         const annotationId = formData.get("annotationId") as string;
         const comment = formData.get("comment") as string;
-        // Optionally allow updating color or other fields
+        const tagsRaw = formData.get("tags") as string;
+
+        const updateDoc: any = { comment, updatedAt: new Date() };
+        if (tagsRaw) {
+            updateDoc.tags = JSON.parse(tagsRaw);
+        }
 
         if (!annotationId) return data({ error: "Missing ID" }, { status: 400 });
 
         await collection.updateOne(
             { _id: new ObjectId(annotationId), userId: userId },
-            { $set: { comment, updatedAt: new Date() } }
+            { $set: updateDoc }
         );
 
         return { success: true, annotationId };
+    }
+
+    if (intent === "upsertGeneral") {
+        const documentId = formData.get("documentId") as string;
+        const collectionName = formData.get("collectionName") as string;
+        const comment = formData.get("comment") as string;
+        const tagsRaw = formData.get("tags") as string;
+        const tags = tagsRaw ? JSON.parse(tagsRaw) : [];
+        const color = formData.get("color") as string || "#e5e7eb";
+
+        if (!documentId || !collectionName) {
+            throw data({ error: "Missing required fields" }, { status: 400 });
+        }
+
+        const filter = { documentId, collectionName, range: null };
+        const update = {
+            $set: {
+                comment,
+                tags,
+                color,
+                userId,
+                updatedAt: new Date(),
+                // Ensure required fields exist on insert
+                username: "User",
+                createdAt: new Date()
+            }
+        };
+
+        const result = await collection.updateOne(filter, update, { upsert: true });
+
+        // If we upserted (created), we might need the ID.
+        // If updated, we have the ID from search? No, updateOne doesn't return ID easily if found.
+        // But for General Note, we can rely on re-fetching.
+        // Or we can assume success.
+
+        return { success: true };
     }
 
     throw data({ error: "Invalid intent" }, { status: 400 });

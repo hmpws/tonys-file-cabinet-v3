@@ -78,12 +78,12 @@ export function deserializeRange(data: SerializedRange, root: HTMLElement): Rang
     const endNode = getNodeFromPath(data.endPath, root);
 
     if (!startNode || !endNode) {
-        console.warn("deserializeRange: Could not locate nodes.", {
-            data,
-            root,
-            foundStart: !!startNode,
-            foundEnd: !!endNode
-        });
+        // console.warn("deserializeRange: Could not locate nodes.", {
+        //     data,
+        //     root,
+        //     foundStart: !!startNode,
+        //     foundEnd: !!endNode
+        // });
         return null;
     }
 
