@@ -231,6 +231,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
 
     // Fetch annotations on load
     useEffect(() => {
+        setAnnotations([]); // Clear old highlights immediately
         if (doc._id) {
             annotationFetcher.load(`/api/annotations?documentId=${doc._id}&collectionName=${collectionName}`);
         }
@@ -244,13 +245,12 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
 
         // If we received a list of annotations (from loader)
         if (data.annotations) {
-            setAnnotations(data.annotations);
+            // STRICTLY filter annotations to match current document
+            const validAnnotations = data.annotations.filter((a: any) => a.documentId === doc._id);
+            setAnnotations(validAnnotations);
         }
 
         // If an action succeeded (create/update/delete), reload the list
-        // We check mutation status to avoid infinite loops if load returns success (unlikely)
-        // But better: check if it's the result of a submission.
-        // Actually, trigger load if data.success is true.
         if (data.success) {
             annotationFetcher.load(`/api/annotations?documentId=${doc._id}&collectionName=${collectionName}`);
         }
@@ -266,8 +266,11 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
         // 1. Highlight and Collect Positions
         const newPositions: any[] = [];
 
-        if (annotations.length > 0) {
-            annotations.forEach(ann => {
+        // Filter annotations relevant to THIS document to avoid race conditions
+        const relevantAnnotations = annotations.filter(a => a.documentId === doc._id);
+
+        if (relevantAnnotations.length > 0) {
+            relevantAnnotations.forEach(ann => {
                 try {
                     // Skip general notes in this loop (handled separately)
                     if (ann.range === "null" || !ann.range) return;
@@ -315,7 +318,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             generalTop = titleRect.top - articleRect.top;
         }
 
-        const generalAnnotation = annotations.find(a => !a.range || a.range === "null");
+        const generalAnnotation = relevantAnnotations.find(a => !a.range || a.range === "null");
         const placeholderGeneral = {
             _id: "general-placeholder",
             top: generalTop,
@@ -846,91 +849,106 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
 
                     <main className="px-6 pb-20 print:pb-0">
                         {/* Unified Article Wrapper (Target for Annotations) */}
-                        <div ref={articleRef} className="relative group max-w-[800px] mx-auto print:mx-0">
+                        <div ref={articleRef} className="relative group mx-auto print:mx-0 md:grid md:grid-cols-[minmax(0,1fr)_300px] md:gap-12 print:grid print:grid-cols-[minmax(0,1fr)_220px] print:gap-8 max-w-[1150px]">
 
-                            {/* Header Section (Now Annotatable) */}
-                            <header className="pt-12 pb-8">
-                                <p className="text-blue-600 mb-4 inline-block font-medium">
-                                    {collectionName}
-                                </p>
-                                <h1 ref={titleRef} className="text-4xl font-bold text-gray-900 leading-tight mb-2">
-                                    {doc.article?.title || "Untitled Document"}
-                                </h1>
-                                {doc.article?.subtitle && (
-                                    <h2 className="text-xl text-gray-500 font-serif leading-relaxed mb-4">
-                                        {doc.article.subtitle}
-                                    </h2>
-                                )}
+                            {/* Content Column */}
+                            <div className="md:min-w-0">
+                                {/* Header Section (Now Annotatable) */}
+                                <header className="pt-12 pb-8">
+                                    <p className="text-blue-600 mb-4 inline-block font-medium">
+                                        {collectionName}
+                                    </p>
+                                    <h1 ref={titleRef} className="text-4xl font-bold text-gray-900 leading-tight mb-2">
+                                        {doc.article?.title || "Untitled Document"}
+                                    </h1>
+                                    {doc.article?.subtitle && (
+                                        <h2 className="text-xl text-gray-500 font-serif leading-relaxed mb-4">
+                                            {doc.article.subtitle}
+                                        </h2>
+                                    )}
 
-                                {doc.article?.audience && (
-                                    <div className="mb-4">
-                                        <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full uppercase tracking-wider font-semibold">
-                                            Audience: {doc.article.audience}
-                                        </span>
+                                    {doc.article?.audience && (
+                                        <div className="mb-4">
+                                            <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full uppercase tracking-wider font-semibold">
+                                                Audience: {doc.article.audience}
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    <div className="flex items-center text-gray-500 text-sm border-t border-gray-100 pt-4 mt-4">
+                                        {doc.article?.post_date && (
+                                            <time dateTime={doc.article.post_date}>
+                                                {new Date(doc.article.post_date).toLocaleDateString("en-US", {
+                                                    year: 'numeric',
+                                                    month: 'long',
+                                                    day: 'numeric'
+                                                })}
+                                            </time>
+                                        )}
+                                    </div>
+
+                                    {/* Media Section */}
+                                    {(doc.video || doc.audio || (doc.media && doc.media.length > 0)) && (
+                                        <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                                            <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Media Files</h3>
+                                            <div className="space-y-2 text-sm text-gray-700">
+                                                {doc.video && (
+                                                    <MediaLink label="Video" filename={doc.video} collectionName={collectionName} />
+                                                )}
+                                                {doc.audio && (
+                                                    <MediaLink label="Audio" filename={doc.audio} collectionName={collectionName} />
+                                                )}
+                                                {doc.media?.map((m: string, i: number) => (
+                                                    <MediaLink key={i} label="Media" filename={m} collectionName={collectionName} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </header>
+
+                                {/* Article Body */}
+                                {doc.article?.body_html ? (
+                                    <ArticleContent html={doc.article.body_html} />
+                                ) : (
+                                    <div className="w-full">
+                                        <pre className="bg-gray-100 text-gray-800 p-4 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed border border-gray-200">
+                                            {JSON.stringify(doc, null, 2)}
+                                        </pre>
                                     </div>
                                 )}
 
-                                <div className="flex items-center text-gray-500 text-sm border-t border-gray-100 pt-4 mt-4">
-                                    {doc.article?.post_date && (
-                                        <time dateTime={doc.article.post_date}>
-                                            {new Date(doc.article.post_date).toLocaleDateString("en-US", {
-                                                year: 'numeric',
-                                                month: 'long',
-                                                day: 'numeric'
-                                            })}
-                                        </time>
-                                    )}
-                                </div>
+                                {/* Transcript Section */}
+                                {doc.transcript && (
+                                    <section className="mt-16 border-t border-gray-100 pt-10">
+                                        <h3 className="text-2xl font-bold text-gray-900 mb-6">Transcript</h3>
+                                        <div className="prose prose-lg prose-slate text-gray-700 leading-relaxed bg-gray-50 p-6 rounded-xl border border-gray-100 whitespace-pre-wrap font-serif w-full max-w-none">
+                                            {doc.transcript}
+                                        </div>
+                                    </section>
+                                )}
 
-                                {/* Media Section */}
-                                {(doc.video || doc.audio || (doc.media && doc.media.length > 0)) && (
-                                    <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
-                                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Media Files</h3>
-                                        <div className="space-y-2 text-sm text-gray-700">
-                                            {doc.video && (
-                                                <MediaLink label="Video" filename={doc.video} collectionName={collectionName} />
-                                            )}
-                                            {doc.audio && (
-                                                <MediaLink label="Audio" filename={doc.audio} collectionName={collectionName} />
-                                            )}
-                                            {doc.media?.map((m: string, i: number) => (
-                                                <MediaLink key={i} label="Media" filename={m} collectionName={collectionName} />
+                                {/* Comments Section */}
+                                {(doc.comments?.comments?.length > 0 || doc.article?.comments?.length > 0) && (
+                                    <section className="mt-16 border-t border-gray-100 pt-10 break-inside-avoid max-w-[800px] mx-auto print:mx-0">
+                                        <h3 className="text-2xl font-bold text-gray-900 mb-8">Comments</h3>
+                                        <div className="space-y-8">
+                                            {(doc.comments?.comments || doc.article?.comments || []).map((comment: any) => (
+                                                <Comment key={comment.id} comment={comment} />
                                             ))}
                                         </div>
-                                    </div>
+                                    </section>
                                 )}
-                            </header>
-
-                            {/* Article Body */}
-                            {doc.article?.body_html ? (
-                                <ArticleContent html={doc.article.body_html} />
-                            ) : (
-                                <div className="w-full">
-                                    <pre className="bg-gray-100 text-gray-800 p-4 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed border border-gray-200">
-                                        {JSON.stringify(doc, null, 2)}
-                                    </pre>
-                                </div>
-                            )}
-
-                            {/* Transcript Section */}
-                            {doc.transcript && (
-                                <section className="mt-16 border-t border-gray-100 pt-10">
-                                    <h3 className="text-2xl font-bold text-gray-900 mb-6">Transcript</h3>
-                                    <div className="prose prose-lg prose-slate text-gray-700 leading-relaxed bg-gray-50 p-6 rounded-xl border border-gray-100 whitespace-pre-wrap font-serif w-full max-w-none">
-                                        {doc.transcript}
-                                    </div>
-                                </section>
-                            )}
+                            </div>
 
                             {/* Side Notes (Cliff Notes) - Desktop & Print */}
-                            <div className="hidden xl:block print:block absolute top-0 left-[820px] w-64 h-full pointer-events-none">
+                            <div className="hidden md:block print:block relative w-full h-full pointer-events-none">
                                 {positionedAnnotations.map(ann => {
                                     const isGeneral = ann.isGeneral;
                                     return (
                                         <div
                                             key={ann._id}
                                             data-annotation-id={ann._id}
-                                            className={`side-note-card left-0 w-64 p-3 bg-white border border-gray-100 shadow-sm rounded-lg text-sm group-hover/note:shadow-md transition-all duration-300 pointer-events-auto cursor-pointer flex gap-3 print:border-gray-300 print:shadow-none bg-white ${isGeneral ? "sticky top-24 z-50 print:!absolute print:!top-[var(--print-top)] print:!mt-0" : "absolute"}`}
+                                            className={`side-note-card left-0 w-64 print:w-full p-3 bg-white border border-gray-100 shadow-sm rounded-lg text-sm group-hover/note:shadow-md transition-all duration-300 pointer-events-auto cursor-pointer flex gap-3 print:border-gray-300 print:shadow-none bg-white ${isGeneral ? "sticky top-24 z-50 print:!absolute print:!top-[var(--print-top)] print:!mt-0" : "absolute"}`}
                                             style={{
                                                 borderLeft: `4px solid ${ann.color || '#fef9c3'}`,
                                                 ...(isGeneral
@@ -977,17 +995,6 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                 })}
                             </div>
 
-                            {/* Comments Section */}
-                            {(doc.comments?.comments?.length > 0 || doc.article?.comments?.length > 0) && (
-                                <section className="mt-16 border-t border-gray-100 pt-10 break-inside-avoid max-w-[800px] mx-auto print:mx-0">
-                                    <h3 className="text-2xl font-bold text-gray-900 mb-8">Comments</h3>
-                                    <div className="space-y-8">
-                                        {(doc.comments?.comments || doc.article?.comments || []).map((comment: any) => (
-                                            <Comment key={comment.id} comment={comment} />
-                                        ))}
-                                    </div>
-                                </section>
-                            )}
                         </div>
                     </main>
 
