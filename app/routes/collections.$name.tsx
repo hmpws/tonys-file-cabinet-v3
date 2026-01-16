@@ -95,7 +95,7 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
     const submit = useSubmit();
     const navigation = useNavigation();
     const isSearching = navigation.state === "loading" && navigation.location.search.includes("q=");
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [collectionSearchTerm, setCollectionSearchTerm] = useState("");
 
     const filteredSidebarCollections = sidebarCollections.filter((c) =>

@@ -330,18 +330,27 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             newPositions.push(placeholderGeneral);
         }
 
-        // 2. Sort by Top Position
-        newPositions.sort((a, b) => a.top - b.top);
+        // 2. Sort by Top Position, but FORCE General Note to be first
+        newPositions.sort((a, b) => {
+            if (a.isGeneral) return -1;
+            if (b.isGeneral) return 1;
+            return a.top - b.top;
+        });
 
         // Assign Indices (0 for general, 1+ for others)
-        const labeledPositions = newPositions.map((p, i) => {
-            if (p.range && p._id.startsWith("temp-") === false) {
-                const mark = articleRef.current?.querySelector(`mark[data-annotation-id="${p._id}"]`) as HTMLElement;
-                if (mark) {
-                    mark.setAttribute("data-annotation-index", String(i));
+        let currentIndex = 1;
+        const labeledPositions = newPositions.map((p) => {
+            let index = 0;
+            if (p.range && !p.isGeneral) { // Only increment for actual highlights
+                index = currentIndex++;
+                if (p._id.startsWith("temp-") === false) {
+                    const mark = articleRef.current?.querySelector(`mark[data-annotation-id="${p._id}"]`) as HTMLElement;
+                    if (mark) {
+                        mark.setAttribute("data-annotation-index", String(index));
+                    }
                 }
             }
-            return { ...p, index: i };
+            return { ...p, index };
         });
 
         setPositionedAnnotations(labeledPositions);
@@ -514,10 +523,12 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
     const saveAnnotation = (color: string) => {
         if (!selection || !articleRef.current) return;
 
-        const serialized = serializeRange(selection.range, articleRef.current);
-        if (!serialized) return;
+
 
         const range = selection.range; // Keep ref before clearing
+
+        const serialized = serializeRange(selection.range, articleRef.current);
+        if (!serialized) return;
         setSelection(null); // Hide toolbar
 
         // Optimistic UI? We need an ID for optimistic UI. 
@@ -680,6 +691,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             if (parent) {
                 while (el.firstChild) parent.insertBefore(el.firstChild, el);
                 parent.removeChild(el);
+                parent.normalize(); // Fix fragmented text nodes that break selection
             }
         });
 
@@ -831,253 +843,253 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             {/* Main Content */}
             <div className="flex-1 order-1 md:order-2 bg-white min-h-screen p-4 flex flex-col items-center print:overflow-visible">
                 <div className="max-w-[1600px] w-full transition-all duration-300 print:max-w-none print:w-full">
-                    <header className="pt-12 pb-8 px-6">
-                        <div className="max-w-[800px] mx-auto print:mx-0">
-                            <p className="text-blue-600 mb-4 inline-block font-medium">
-                                {collectionName}
-                            </p>
-                            <h1 ref={titleRef} className="text-4xl font-bold text-gray-900 leading-tight mb-2">
-                                {doc.article?.title || "Untitled Document"}
-                            </h1>
-                            {doc.article?.subtitle && (
-                                <h2 className="text-xl text-gray-500 font-serif leading-relaxed mb-4">
-                                    {doc.article.subtitle}
-                                </h2>
-                            )}
-
-                            {doc.article?.audience && (
-                                <div className="mb-4">
-                                    <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full uppercase tracking-wider font-semibold">
-                                        Audience: {doc.article.audience}
-                                    </span>
-                                </div>
-                            )}
-
-                            <div className="flex items-center text-gray-500 text-sm border-t border-gray-100 pt-4 mt-4">
-                                {doc.article?.post_date && (
-                                    <time dateTime={doc.article.post_date}>
-                                        {new Date(doc.article.post_date).toLocaleDateString("en-US", {
-                                            year: 'numeric',
-                                            month: 'long',
-                                            day: 'numeric'
-                                        })}
-                                    </time>
-                                )}
-                            </div>
-
-                            {/* Media Section */}
-                            {(doc.video || doc.audio || (doc.media && doc.media.length > 0)) && (
-                                <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
-                                    <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Media Files</h3>
-                                    <div className="space-y-2 text-sm text-gray-700">
-                                        {doc.video && (
-                                            <MediaLink label="Video" filename={doc.video} collectionName={collectionName} />
-                                        )}
-                                        {doc.audio && (
-                                            <MediaLink label="Audio" filename={doc.audio} collectionName={collectionName} />
-                                        )}
-                                        {doc.media?.map((m: string, i: number) => (
-                                            <MediaLink key={i} label="Media" filename={m} collectionName={collectionName} />
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </header>
 
                     <main className="px-6 pb-20 print:pb-0">
-                        {doc.article?.body_html ? (
-                            <div className="relative group max-w-[800px] mx-auto print:mx-0">
-                                <div ref={articleRef}>
-                                    <ArticleContent html={doc.article.body_html} />
-                                </div>
+                        {/* Unified Article Wrapper (Target for Annotations) */}
+                        <div ref={articleRef} className="relative group max-w-[800px] mx-auto print:mx-0">
 
-                                {/* Side Notes (Cliff Notes) - Desktop & Print */}
-                                <div className="hidden xl:block print:block absolute top-0 left-[820px] w-64 h-full pointer-events-none">
-                                    {positionedAnnotations.map(ann => {
-                                        const isGeneral = ann.isGeneral;
-                                        return (
-                                            <div
-                                                key={ann._id}
-                                                data-annotation-id={ann._id}
-                                                className={`side-note-card left-0 w-64 p-3 bg-white border border-gray-100 shadow-sm rounded-lg text-sm group-hover/note:shadow-md transition-all duration-300 pointer-events-auto cursor-pointer flex gap-3 print:border-gray-300 print:shadow-none bg-white ${isGeneral ? "sticky top-24 z-50 print:!absolute print:!top-[var(--print-top)] print:!mt-0" : "absolute"}`}
-                                                style={{
-                                                    borderLeft: `4px solid ${ann.color || '#fef9c3'}`,
-                                                    ...(isGeneral
-                                                        ? {
-                                                            marginTop: `${visualOffsets[ann._id] ?? ann.top}px`,
-                                                            "--print-top": `${visualOffsets[ann._id] ?? ann.top}px`
-                                                        } as any
-                                                        : { top: `${visualOffsets[ann._id] ?? ann.top}px` }
-                                                    )
-                                                }}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setActiveAnnotation({ id: ann._id, rect: (e.target as HTMLElement).getBoundingClientRect() });
-                                                    setEditingComment(ann.comment || "");
-                                                    setEditingTags(ann.tags || []);
-                                                }}
-                                            >
-                                                {!ann.isGeneral && (
-                                                    <div className="flex-shrink-0 font-bold text-gray-400 select-none">
-                                                        {ann.index}
-                                                    </div>
-                                                )}
-                                                <div className="flex-1 min-w-0">
-                                                    {/* Only show tags for General Note (Index 0) */}
-                                                    {(ann.isGeneral || !ann.range) && ann.tags && ann.tags.length > 0 && (
-                                                        <div className="flex flex-wrap gap-1 mb-2">
-                                                            {ann.tags.map((tag: string, i: number) => (
-                                                                <span key={i} className="annotation-tag inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800 border border-transparent print:border-gray-300 print:bg-white">
-                                                                    {tag}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                    {ann.comment ? (
-                                                        <div className="text-gray-800 min-w-0 break-words">{ann.comment}</div>
-                                                    ) : (
-                                                        <div className="text-gray-400 italic text-xs">
-                                                            {ann.isGeneral ? "Add a general note..." : "No comment"}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                            {/* Header Section (Now Annotatable) */}
+                            <header className="pt-12 pb-8">
+                                <p className="text-blue-600 mb-4 inline-block font-medium">
+                                    {collectionName}
+                                </p>
+                                <h1 ref={titleRef} className="text-4xl font-bold text-gray-900 leading-tight mb-2">
+                                    {doc.article?.title || "Untitled Document"}
+                                </h1>
+                                {doc.article?.subtitle && (
+                                    <h2 className="text-xl text-gray-500 font-serif leading-relaxed mb-4">
+                                        {doc.article.subtitle}
+                                    </h2>
+                                )}
 
-                                {selection && (
-                                    <div
-                                        style={{
-                                            position: 'fixed',
-                                            top: `${selection.rect.top - 40}px`,
-                                            left: `${selection.rect.left}px`,
-                                            zIndex: 50
-                                        }}
-                                        className="bg-white shadow-xl rounded-lg border border-gray-200 p-1 flex gap-1 print:hidden"
-                                    >
-                                        <button onClick={() => saveAnnotation("#fef9c3")} className="w-6 h-6 rounded-full bg-[#fef9c3] hover:scale-110 transition-transform border border-gray-200" title="Yellow"></button>
-                                        <button onClick={() => saveAnnotation("#dcfce7")} className="w-6 h-6 rounded-full bg-[#dcfce7] hover:scale-110 transition-transform border border-gray-200" title="Green"></button>
-                                        <button onClick={() => saveAnnotation("#fce7f3")} className="w-6 h-6 rounded-full bg-[#fce7f3] hover:scale-110 transition-transform border border-gray-200" title="Pink"></button>
+                                {doc.article?.audience && (
+                                    <div className="mb-4">
+                                        <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full uppercase tracking-wider font-semibold">
+                                            Audience: {doc.article.audience}
+                                        </span>
                                     </div>
                                 )}
 
-                                {activeAnnotation && (() => {
-                                    const currentAnn = annotations.find(a => a._id === activeAnnotation.id);
-                                    // Check if it's general (placeholder or no range)
-                                    // Note: currentAnn might be undefined if we just created it optimistically and ID matching is tricky,
-                                    // but we handled optimistic updates by adding to annotations state.
-                                    const isGeneral = activeAnnotation.id === "general-placeholder" || (currentAnn && (!currentAnn.range || (currentAnn as any).isGeneral));
+                                <div className="flex items-center text-gray-500 text-sm border-t border-gray-100 pt-4 mt-4">
+                                    {doc.article?.post_date && (
+                                        <time dateTime={doc.article.post_date}>
+                                            {new Date(doc.article.post_date).toLocaleDateString("en-US", {
+                                                year: 'numeric',
+                                                month: 'long',
+                                                day: 'numeric'
+                                            })}
+                                        </time>
+                                    )}
+                                </div>
 
+                                {/* Media Section */}
+                                {(doc.video || doc.audio || (doc.media && doc.media.length > 0)) && (
+                                    <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Media Files</h3>
+                                        <div className="space-y-2 text-sm text-gray-700">
+                                            {doc.video && (
+                                                <MediaLink label="Video" filename={doc.video} collectionName={collectionName} />
+                                            )}
+                                            {doc.audio && (
+                                                <MediaLink label="Audio" filename={doc.audio} collectionName={collectionName} />
+                                            )}
+                                            {doc.media?.map((m: string, i: number) => (
+                                                <MediaLink key={i} label="Media" filename={m} collectionName={collectionName} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </header>
+
+                            {/* Article Body */}
+                            {doc.article?.body_html ? (
+                                <ArticleContent html={doc.article.body_html} />
+                            ) : (
+                                <div className="w-full">
+                                    <pre className="bg-gray-100 text-gray-800 p-4 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed border border-gray-200">
+                                        {JSON.stringify(doc, null, 2)}
+                                    </pre>
+                                </div>
+                            )}
+
+                            {/* Transcript Section */}
+                            {doc.transcript && (
+                                <section className="mt-16 border-t border-gray-100 pt-10">
+                                    <h3 className="text-2xl font-bold text-gray-900 mb-6">Transcript</h3>
+                                    <div className="prose prose-lg prose-slate text-gray-700 leading-relaxed bg-gray-50 p-6 rounded-xl border border-gray-100 whitespace-pre-wrap font-serif w-full max-w-none">
+                                        {doc.transcript}
+                                    </div>
+                                </section>
+                            )}
+
+                            {/* Side Notes (Cliff Notes) - Desktop & Print */}
+                            <div className="hidden xl:block print:block absolute top-0 left-[820px] w-64 h-full pointer-events-none">
+                                {positionedAnnotations.map(ann => {
+                                    const isGeneral = ann.isGeneral;
                                     return (
                                         <div
-                                            className="annotation-popover fixed z-50 bg-white shadow-2xl rounded-lg border border-gray-200 p-4 w-80 ring-1 ring-gray-900/5"
+                                            key={ann._id}
+                                            data-annotation-id={ann._id}
+                                            className={`side-note-card left-0 w-64 p-3 bg-white border border-gray-100 shadow-sm rounded-lg text-sm group-hover/note:shadow-md transition-all duration-300 pointer-events-auto cursor-pointer flex gap-3 print:border-gray-300 print:shadow-none bg-white ${isGeneral ? "sticky top-24 z-50 print:!absolute print:!top-[var(--print-top)] print:!mt-0" : "absolute"}`}
                                             style={{
-                                                top: `${activeAnnotation.rect.bottom + 10}px`,
-                                                left: `${Math.min(window.innerWidth - 320, Math.max(10, activeAnnotation.rect.left))}px`
+                                                borderLeft: `4px solid ${ann.color || '#fef9c3'}`,
+                                                ...(isGeneral
+                                                    ? {
+                                                        // Removed marginTop hack; aligned with top of wrapper (Header) by default
+                                                        "--print-top": `${visualOffsets[ann._id] ?? ann.top}px`
+                                                    } as any
+                                                    : { top: `${visualOffsets[ann._id] ?? ann.top}px` }
+                                                )
+                                            }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveAnnotation({ id: ann._id, rect: (e.target as HTMLElement).getBoundingClientRect() });
+                                                setEditingComment(ann.comment || "");
+                                                setEditingTags(ann.tags || []);
                                             }}
                                         >
-                                            <h4 className="font-bold text-gray-800 mb-2 text-sm">
-                                                {isGeneral ? "General Note" : "Annotation"}
-                                            </h4>
-
-                                            {isGeneral && (
-                                                <div className="mb-3">
-                                                    <input
-                                                        type="text"
-                                                        className="w-full border border-gray-300 rounded text-xs p-1.5 mb-2 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none text-gray-900 bg-white"
-                                                        placeholder="Add tags... (Enter or comma)"
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === "Enter" || e.key === ",") {
-                                                                e.preventDefault();
-                                                                const val = (e.target as HTMLInputElement).value.trim();
-                                                                if (val && !editingTags.includes(val)) {
-                                                                    setEditingTags([...editingTags, val]);
-                                                                    (e.target as HTMLInputElement).value = "";
-                                                                }
-                                                            }
-                                                        }}
-                                                    />
-                                                    {editingTags.length > 0 && (
-                                                        <div className="flex flex-wrap gap-1">
-                                                            {editingTags.map((tag, i) => (
-                                                                <span key={i} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                                                    {tag}
-                                                                    <button
-                                                                        onClick={() => setEditingTags(editingTags.filter(t => t !== tag))}
-                                                                        className="ml-1 text-blue-600 hover:text-blue-900 focus:outline-none"
-                                                                    >
-                                                                        &times;
-                                                                    </button>
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                    )}
+                                            {!ann.isGeneral && (
+                                                <div className="flex-shrink-0 font-bold text-gray-400 select-none">
+                                                    {ann.index}
                                                 </div>
                                             )}
-                                            <textarea
-                                                className="w-full border border-gray-300 rounded-md p-3 text-sm mb-3 min-h-[100px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none bg-gray-50 focus:bg-white transition-colors text-gray-900"
-                                                placeholder="Write your comment here..."
-                                                value={editingComment}
-                                                onChange={(e) => setEditingComment(e.target.value)}
-                                                autoFocus
-                                            />
-                                            <div className="flex justify-between items-center">
-                                                {isGeneral ? (
-                                                    <button
-                                                        onClick={() => {
-                                                            setEditingComment("");
-                                                            setEditingTags([]);
-                                                        }}
-                                                        className="text-gray-500 text-xs hover:underline"
-                                                    >
-                                                        Clear
-                                                    </button>
-                                                ) : (
-                                                    <button
-                                                        onClick={deleteAnnotation}
-                                                        className="text-red-500 text-xs hover:underline"
-                                                    >
-                                                        Delete
-                                                    </button>
+                                            <div className="flex-1 min-w-0">
+                                                {/* Only show tags for General Note (Index 0) */}
+                                                {(ann.isGeneral || !ann.range) && ann.tags && ann.tags.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 mb-2">
+                                                        {ann.tags.map((tag: string, i: number) => (
+                                                            <span key={i} className="annotation-tag inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800 border border-transparent print:border-gray-300 print:bg-white">
+                                                                {tag}
+                                                            </span>
+                                                        ))}
+                                                    </div>
                                                 )}
-
+                                                {ann.comment ? (
+                                                    <div className="text-gray-800 min-w-0 break-words">{ann.comment}</div>
+                                                ) : (
+                                                    <div className="text-gray-400 italic text-xs">
+                                                        {ann.isGeneral ? "Add a general note..." : "No comment"}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     );
-                                })()}
+                                })}
                             </div>
-                        ) : (
-                            <div className="w-full">
-                                <pre className="bg-gray-100 text-gray-800 p-4 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed border border-gray-200">
-                                    {JSON.stringify(doc, null, 2)}
-                                </pre>
-                            </div>
-                        )}
 
-                        {/* Transcript Section */}
-                        {doc.transcript && (
-                            <section className="mt-16 border-t border-gray-100 pt-10 max-w-[800px] mx-auto print:mx-0">
-                                <h3 className="text-2xl font-bold text-gray-900 mb-6">Transcript</h3>
-                                <div className="prose prose-lg prose-slate text-gray-700 leading-relaxed bg-gray-50 p-6 rounded-xl border border-gray-100 whitespace-pre-wrap font-serif w-full max-w-none">
-                                    {doc.transcript}
-                                </div>
-                            </section>
-                        )}
-
-                        {/* Comments Section */}
-                        {(doc.comments?.comments?.length > 0 || doc.article?.comments?.length > 0) && (
-                            <section className="mt-16 border-t border-gray-100 pt-10 break-inside-avoid print:hidden max-w-[800px] mx-auto print:mx-0">
-                                <h3 className="text-2xl font-bold text-gray-900 mb-8">Comments</h3>
-                                <div className="space-y-8">
-                                    {(doc.comments?.comments || doc.article?.comments || []).map((comment: any) => (
-                                        <Comment key={comment.id} comment={comment} />
-                                    ))}
-                                </div>
-                            </section>
-                        )}
+                            {/* Comments Section */}
+                            {(doc.comments?.comments?.length > 0 || doc.article?.comments?.length > 0) && (
+                                <section className="mt-16 border-t border-gray-100 pt-10 break-inside-avoid max-w-[800px] mx-auto print:mx-0">
+                                    <h3 className="text-2xl font-bold text-gray-900 mb-8">Comments</h3>
+                                    <div className="space-y-8">
+                                        {(doc.comments?.comments || doc.article?.comments || []).map((comment: any) => (
+                                            <Comment key={comment.id} comment={comment} />
+                                        ))}
+                                    </div>
+                                </section>
+                            )}
+                        </div>
                     </main>
+
+                    {/* Floating Selection Toolbar */}
+                    {selection && (
+                        <div
+                            style={{
+                                position: 'fixed',
+                                top: `${selection.rect.top - 40}px`,
+                                left: `${selection.rect.left}px`,
+                                zIndex: 50
+                            }}
+                            className="bg-white shadow-xl rounded-lg border border-gray-200 p-1 flex gap-1 print:hidden"
+                        >
+                            <button onClick={() => saveAnnotation("#fef9c3")} className="w-6 h-6 rounded-full bg-[#fef9c3] hover:scale-110 transition-transform border border-gray-200" title="Yellow"></button>
+                            <button onClick={() => saveAnnotation("#dcfce7")} className="w-6 h-6 rounded-full bg-[#dcfce7] hover:scale-110 transition-transform border border-gray-200" title="Green"></button>
+                            <button onClick={() => saveAnnotation("#fce7f3")} className="w-6 h-6 rounded-full bg-[#fce7f3] hover:scale-110 transition-transform border border-gray-200" title="Pink"></button>
+                        </div>
+                    )}
+
+                    {/* Popover */}
+                    {activeAnnotation && (() => {
+                        const currentAnn = annotations.find(a => a._id === activeAnnotation.id);
+                        const isGeneral = activeAnnotation.id === "general-placeholder" || (currentAnn && (!currentAnn.range || (currentAnn as any).isGeneral));
+
+                        return (
+                            <div
+                                className="annotation-popover fixed z-50 bg-white shadow-2xl rounded-lg border border-gray-200 p-4 w-80 ring-1 ring-gray-900/5"
+                                style={{
+                                    top: `${activeAnnotation.rect.bottom + 10}px`,
+                                    left: `${Math.min(window.innerWidth - 320, Math.max(10, activeAnnotation.rect.left))}px`
+                                }}
+                            >
+                                <h4 className="font-bold text-gray-800 mb-2 text-sm">
+                                    {isGeneral ? "General Note" : "Annotation"}
+                                </h4>
+
+                                {isGeneral && (
+                                    <div className="mb-3">
+                                        <input
+                                            type="text"
+                                            className="w-full border border-gray-300 rounded text-xs p-1.5 mb-2 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none text-gray-900 bg-white"
+                                            placeholder="Add tags... (Enter or comma)"
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter" || e.key === ",") {
+                                                    e.preventDefault();
+                                                    const val = (e.target as HTMLInputElement).value.trim();
+                                                    if (val && !editingTags.includes(val)) {
+                                                        setEditingTags([...editingTags, val]);
+                                                        (e.target as HTMLInputElement).value = "";
+                                                    }
+                                                }
+                                            }}
+                                        />
+                                        {editingTags.length > 0 && (
+                                            <div className="flex flex-wrap gap-1">
+                                                {editingTags.map((tag, i) => (
+                                                    <span key={i} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                        {tag}
+                                                        <button
+                                                            onClick={() => setEditingTags(editingTags.filter(t => t !== tag))}
+                                                            className="ml-1 text-blue-600 hover:text-blue-900 focus:outline-none"
+                                                        >
+                                                            &times;
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                <textarea
+                                    className="w-full border border-gray-300 rounded-md p-3 text-sm mb-3 min-h-[100px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none bg-gray-50 focus:bg-white transition-colors text-gray-900"
+                                    placeholder="Write your comment here..."
+                                    value={editingComment}
+                                    onChange={(e) => setEditingComment(e.target.value)}
+                                    autoFocus
+                                />
+                                <div className="flex justify-between items-center">
+                                    {isGeneral ? (
+                                        <button
+                                            onClick={() => {
+                                                setEditingComment("");
+                                                setEditingTags([]);
+                                            }}
+                                            className="text-gray-500 text-xs hover:underline"
+                                        >
+                                            Clear
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={deleteAnnotation}
+                                            className="text-red-500 text-xs hover:underline"
+                                        >
+                                            Delete
+                                        </button>
+                                    )}
+
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
             </div >
         </div >
