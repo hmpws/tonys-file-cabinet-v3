@@ -759,7 +759,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                 ref={sidebarRef}
                 className={`
                     bg-gray-50 border-r border-gray-200 flex-shrink-0 flex flex-col
-                    h-screen md:h-[calc(100vh-3rem)] overflow-hidden fixed md:sticky top-0 md:top-12 left-0
+                    h-screen md:h-[calc(100vh-3rem)] overflow-hidden fixed top-0 md:top-12 left-0
                     ${enableTransitions ? 'transition-all duration-300 ease-in-out' : ''}
                     ${isSidebarOpen ? 'w-full md:w-80 translate-x-0 opacity-100 z-30' : 'w-0 -translate-x-full opacity-0 overflow-hidden p-0 border-none -z-10'}
                     print:hidden
@@ -844,15 +844,15 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             </aside >
 
             {/* Main Content */}
-            <div className="flex-1 order-1 md:order-2 bg-white min-h-screen p-4 flex flex-col items-center print:overflow-visible">
+            <div className={`flex-1 order-1 md:order-2 bg-white min-h-screen p-4 flex flex-col items-center print:overflow-visible transition-opacity duration-300 ${isSidebarOpen ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="max-w-[1600px] w-full transition-all duration-300 print:max-w-none print:w-full">
 
                     <main className="px-6 pb-20 print:pb-0">
                         {/* Unified Article Wrapper (Target for Annotations) */}
-                        <div ref={articleRef} className="relative group mx-auto print:mx-0 md:grid md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_300px] md:gap-6 lg:gap-12 print:grid print:grid-cols-[minmax(0,1fr)_200px] print:gap-6 max-w-[1150px] print:max-w-none">
+                        <div ref={articleRef} className="relative group mx-auto print:mx-0 md:grid md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_800px_minmax(0,1fr)] md:gap-6 lg:gap-12 print:grid print:grid-cols-[minmax(0,1fr)_200px] print:gap-6 max-w-[1150px] 2xl:max-w-none print:max-w-none">
 
                             {/* Content Column */}
-                            <div className="md:min-w-0">
+                            <div className="md:min-w-0 2xl:col-start-2">
                                 {/* Header Section (Now Annotatable) */}
                                 <header className="pt-12 pb-8">
                                     <p className="text-blue-600 mb-4 inline-block font-medium">
@@ -941,7 +941,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                             </div>
 
                             {/* Side Notes (Cliff Notes) - Desktop & Print */}
-                            <div className="hidden md:block print:block relative w-full h-full pointer-events-none">
+                            <div className="hidden md:block print:block relative w-full 2xl:w-[300px] h-full pointer-events-none 2xl:col-start-3">
                                 {positionedAnnotations.map(ann => {
                                     const isGeneral = ann.isGeneral;
                                     return (

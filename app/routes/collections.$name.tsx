@@ -183,7 +183,7 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
             <aside
                 className={`
                     bg-gray-50 border-r border-gray-200 flex-shrink-0 flex flex-col
-                    h-screen md:h-[calc(100vh-3rem)] overflow-hidden fixed md:sticky top-0 md:top-12 left-0
+                    h-screen md:h-[calc(100vh-3rem)] overflow-hidden fixed top-0 md:top-12 left-0
                     transition-all duration-300 ease-in-out
                     ${isSidebarOpen ? 'w-full md:w-80 translate-x-0 opacity-100 z-30' : 'w-0 -translate-x-full opacity-0 overflow-hidden p-0 border-none -z-10'}
                     print:hidden
@@ -241,7 +241,7 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
             </aside >
 
             {/* Main Content */}
-            < div className={`flex-1 flex flex-col items-center min-h-screen bg-gray-100 p-4 transition-all duration-300 md:ml-0 ${isSidebarOpen ? 'opacity-50 md:opacity-100' : ''}`
+            < div className={`flex-1 flex flex-col items-center min-h-screen bg-gray-100 p-4 transition-all duration-300 md:ml-0 ${isSidebarOpen ? 'opacity-50 pointer-events-none' : ''}`
             }>
                 <div className="max-w-2xl w-full bg-white shadow-lg rounded-xl overflow-hidden mt-4">
                     <header className="bg-blue-600 text-white p-6">
