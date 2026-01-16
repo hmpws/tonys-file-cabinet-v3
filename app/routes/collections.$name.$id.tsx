@@ -829,7 +829,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             </aside >
 
             {/* Main Content */}
-            <div className="flex-1 order-1 md:order-2 bg-white min-h-screen p-4 flex flex-col items-center overflow-x-hidden print:overflow-visible">
+            <div className="flex-1 order-1 md:order-2 bg-white min-h-screen p-4 flex flex-col items-center print:overflow-visible">
                 <div className="max-w-[1600px] w-full transition-all duration-300 print:max-w-none print:w-full">
                     <header className="pt-12 pb-8 px-6">
                         <div className="max-w-[800px] mx-auto print:mx-0">
@@ -894,48 +894,57 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
 
                                 {/* Side Notes (Cliff Notes) - Desktop & Print */}
                                 <div className="hidden xl:block print:block absolute top-0 left-[820px] w-64 h-full pointer-events-none">
-                                    {positionedAnnotations.map(ann => (
-                                        <div
-                                            key={ann._id}
-                                            data-annotation-id={ann._id}
-                                            className="side-note-card absolute left-0 w-64 p-3 bg-white border border-gray-100 shadow-sm rounded-lg text-sm group-hover/note:shadow-md transition-all duration-300 pointer-events-auto cursor-pointer flex gap-3 print:border-gray-300 print:shadow-none bg-white"
-                                            style={{
-                                                top: `${visualOffsets[ann._id] ?? ann.top}px`,
-                                                borderLeft: `4px solid ${ann.color || '#fef9c3'}`
-                                            }}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setActiveAnnotation({ id: ann._id, rect: (e.target as HTMLElement).getBoundingClientRect() });
-                                                setEditingComment(ann.comment || "");
-                                                setEditingTags(ann.tags || []);
-                                            }}
-                                        >
-                                            {!ann.isGeneral && (
-                                                <div className="flex-shrink-0 font-bold text-gray-400 select-none">
-                                                    {ann.index}
+                                    {positionedAnnotations.map(ann => {
+                                        const isGeneral = ann.isGeneral;
+                                        return (
+                                            <div
+                                                key={ann._id}
+                                                data-annotation-id={ann._id}
+                                                className={`side-note-card left-0 w-64 p-3 bg-white border border-gray-100 shadow-sm rounded-lg text-sm group-hover/note:shadow-md transition-all duration-300 pointer-events-auto cursor-pointer flex gap-3 print:border-gray-300 print:shadow-none bg-white ${isGeneral ? "sticky top-24 z-50 print:!absolute print:!top-[var(--print-top)] print:!mt-0" : "absolute"}`}
+                                                style={{
+                                                    borderLeft: `4px solid ${ann.color || '#fef9c3'}`,
+                                                    ...(isGeneral
+                                                        ? {
+                                                            marginTop: `${visualOffsets[ann._id] ?? ann.top}px`,
+                                                            "--print-top": `${visualOffsets[ann._id] ?? ann.top}px`
+                                                        } as any
+                                                        : { top: `${visualOffsets[ann._id] ?? ann.top}px` }
+                                                    )
+                                                }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setActiveAnnotation({ id: ann._id, rect: (e.target as HTMLElement).getBoundingClientRect() });
+                                                    setEditingComment(ann.comment || "");
+                                                    setEditingTags(ann.tags || []);
+                                                }}
+                                            >
+                                                {!ann.isGeneral && (
+                                                    <div className="flex-shrink-0 font-bold text-gray-400 select-none">
+                                                        {ann.index}
+                                                    </div>
+                                                )}
+                                                <div className="flex-1 min-w-0">
+                                                    {/* Only show tags for General Note (Index 0) */}
+                                                    {(ann.isGeneral || !ann.range) && ann.tags && ann.tags.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1 mb-2">
+                                                            {ann.tags.map((tag: string, i: number) => (
+                                                                <span key={i} className="annotation-tag inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800 border border-transparent print:border-gray-300 print:bg-white">
+                                                                    {tag}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    {ann.comment ? (
+                                                        <div className="text-gray-800 min-w-0 break-words">{ann.comment}</div>
+                                                    ) : (
+                                                        <div className="text-gray-400 italic text-xs">
+                                                            {ann.isGeneral ? "Add a general note..." : "No comment"}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            )}
-                                            <div className="flex-1 min-w-0">
-                                                {/* Only show tags for General Note (Index 0) */}
-                                                {(ann.isGeneral || !ann.range) && ann.tags && ann.tags.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1 mb-2">
-                                                        {ann.tags.map((tag: string, i: number) => (
-                                                            <span key={i} className="annotation-tag inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800 border border-transparent print:border-gray-300 print:bg-white">
-                                                                {tag}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                {ann.comment ? (
-                                                    <div className="text-gray-800 min-w-0 break-words">{ann.comment}</div>
-                                                ) : (
-                                                    <div className="text-gray-400 italic text-xs">
-                                                        {ann.isGeneral ? "Add a general note..." : "No comment"}
-                                                    </div>
-                                                )}
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
 
                                 {selection && (
