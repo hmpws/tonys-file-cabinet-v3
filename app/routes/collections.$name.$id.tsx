@@ -30,30 +30,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     const db = client.db("substack");
     const collection = db.collection(params.name);
 
-    // Sidebar Data Fetching
-    const url = new URL(request.url);
-    const page = parseInt(url.searchParams.get("page") || "1", 10);
-    const searchTerm = url.searchParams.get("q") || "";
-    // Fetch all items up to the current page to ensure the list context is preserved for scroll restoration
-    const itemsPerPage = 10;
-    const limit = page * itemsPerPage;
-    const skip = 0;
-
-    const filter = searchTerm
-        ? { "article.title": { $regex: searchTerm, $options: "i" } }
-        : {};
-
-    const sidebarDocs = await collection
-        .find(filter)
-        .sort({ "article.post_date": -1 })
-        .project({ _id: 1, "article.title": 1, "article.post_date": 1, "article.audience": 1 })
-        .skip(skip)
-        .limit(limit)
-        .toArray();
-
-    const totalDocs = await collection.countDocuments(filter);
-
-    // Current Document Fetching
+    // 1. Fetch Current Document First
     let doc;
     try {
         doc = await collection.findOne({ _id: new ObjectId(params.id) });
@@ -64,6 +41,51 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     if (!doc) {
         throw new Response("Document Not Found", { status: 404 });
     }
+
+    // 2. Determine Page for Sidebar
+    const url = new URL(request.url);
+    const searchTerm = url.searchParams.get("q") || "";
+    const itemsPerPage = 20;
+
+    // Default filter matches sidebar
+    const filter = searchTerm
+        ? { "article.title": { $regex: searchTerm, $options: "i" } }
+        : {};
+
+    // Calculate position of current doc to ensure it's loaded
+    // Only calculate if we are viewing the main list (no active search filtering that might exclude this doc)
+    // Or if search logic allows, but typically we want context.
+    // If searchTerm is present, the doc might not even be in the result set if it doesn't match.
+    // We'll perform the position count using the SAME filter.
+
+    let targetPage = 1;
+    if (doc.article?.post_date) {
+        // Count how many docs are "before" this one in the sort order (post_date descending)
+        // If searching, this only counts matching docs before this one.
+        const positionQuery = {
+            ...filter,
+            "article.post_date": { $gt: doc.article.post_date }
+        };
+        const countBefore = await collection.countDocuments(positionQuery);
+        targetPage = Math.ceil((countBefore + 1) / itemsPerPage);
+    }
+
+    const explicitPage = parseInt(url.searchParams.get("page") || "0", 10);
+    const page = Math.max(targetPage, explicitPage, 1);
+
+    const limit = page * itemsPerPage;
+    const skip = 0;
+
+    // 3. Fetch Sidebar Data with sufficient limit
+    const sidebarDocs = await collection
+        .find(filter)
+        .sort({ "article.post_date": -1 })
+        .project({ _id: 1, "article.title": 1, "article.post_date": 1, "article.audience": 1 })
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+    const totalDocs = await collection.countDocuments(filter);
 
     return {
         collectionName: params.name,
@@ -240,7 +262,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
         }
     }, [fetcher.data]);
 
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [matchesMobile, setMatchesMobile] = useState(false); // Helper to track if we are on mobile
     const [enableTransitions, setEnableTransitions] = useState(false); // State to delay transitions until after restore
     const sidebarRef = useRef<HTMLElement>(null);
@@ -258,30 +280,31 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
         return () => clearTimeout(timer);
     }, []);
 
+    // Scroll active document into view
+    useEffect(() => {
+        // Short timeout to ensure DOM is ready and transitions don't interfere
+        const timer = setTimeout(() => {
+            const activeElement = document.getElementById("active-doc-item");
+            if (activeElement) {
+                activeElement.scrollIntoView({ block: "center", behavior: "smooth" });
+            }
+        }, 100);
+        return () => clearTimeout(timer);
+    }, [doc.id]); // Re-run when doc ID changes
+
     const toggleSidebar = (isOpen: boolean) => {
         setIsSidebarOpen(isOpen);
         sessionStorage.setItem("sidebarOpen", String(isOpen));
     };
 
-    useEffect(() => {
-        // Idempotent script loading: check if already exists
-        if (document.querySelector('script[src="https://hypothes.is/embed.js"]')) {
-            return;
-        }
 
-        const script = document.createElement('script');
-        script.src = "https://hypothes.is/embed.js";
-        script.async = true;
-        document.body.appendChild(script);
-    }, []);
 
     return (
         <div className="min-h-screen bg-white font-sans flex flex-col md:flex-row relative">
             {/* Mobile/Collapsed Toggle Button */}
-            {/* Mobile/Collapsed Toggle Button */}
             <button
                 onClick={() => toggleSidebar(!isSidebarOpen)}
-                className="fixed left-4 top-24 z-40 p-2 bg-white border border-gray-200 rounded-md shadow-md text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all print:hidden"
+                className={`fixed top-24 z-40 p-2 bg-white border border-gray-200 rounded-md shadow-md text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all duration-300 ease-in-out print:hidden ${isSidebarOpen ? "left-80 md:left-[21rem]" : "left-4"}`}
                 aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
             >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -297,87 +320,89 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             <aside
                 ref={sidebarRef}
                 className={`
-                    bg-gray-50 border-r border-gray-200 p-6 flex-shrink-0 
-                    h-screen md:h-[calc(100vh-3rem)] overflow-y-auto fixed md:sticky top-0 md:top-12 left-0
+                    bg-gray-50 border-r border-gray-200 flex-shrink-0 flex flex-col
+                    h-screen md:h-[calc(100vh-3rem)] overflow-hidden fixed md:sticky top-0 md:top-12 left-0
                     ${enableTransitions ? 'transition-all duration-300 ease-in-out' : ''}
                     ${isSidebarOpen ? 'w-full md:w-80 translate-x-0 opacity-100 z-30' : 'w-0 -translate-x-full opacity-0 overflow-hidden p-0 border-none -z-10'}
-                    [&::-webkit-scrollbar]:w-1.5
-                    [&::-webkit-scrollbar-track]:bg-transparent
-                    [&::-webkit-scrollbar-thumb]:bg-gray-200
-                    [&::-webkit-scrollbar-thumb]:rounded-full
-                    hover:[&::-webkit-scrollbar-thumb]:bg-gray-300
                     print:hidden
                 `}
             >
-                <div className="flex justify-end mb-4 md:hidden">
-                    <button onClick={() => toggleSidebar(false)} className="text-gray-500">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                    </button>
-                </div>
+                <div className="p-6 pb-0 flex-shrink-0">
+                    <div className="flex justify-end mb-4 md:hidden">
+                        <button onClick={() => toggleSidebar(false)} className="text-gray-500">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                    </div>
 
-                <div className="mb-6 flex items-center gap-2">
-                    <div className="flex-1">
-                        <Form method="get" className="relative" onChange={(e) => {
+                    <div className="mb-6 flex items-center gap-2">
+                        <div className="flex-1">
+                            <Form method="get" className="relative" onChange={(e) => {
 
-                            const isFirstSearch = e.currentTarget.q.value.length > 0;
-                            submit(e.currentTarget, {
-                                replace: !isFirstSearch
-                            });
-                        }}>
-                            <input
-                                type="search"
-                                name="q"
-                                defaultValue={searchTerm}
-                                className="block w-full p-2 text-sm text-gray-900 border border-gray-300 rounded-lg bg-white focus:ring-blue-500 focus:border-blue-500 pr-8"
-                                placeholder="Search articles..."
-                            />
-                            {navigation.state === "loading" && navigation.location.search.includes("q=") && (
-                                <div className="absolute inset-y-0 right-0 flex items-center pr-2">
-                                    <svg className="animate-spin h-4 w-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                </div>
-                            )}
-                        </Form>
+                                const isFirstSearch = e.currentTarget.q.value.length > 0;
+                                submit(e.currentTarget, {
+                                    replace: !isFirstSearch
+                                });
+                            }}>
+                                <input
+                                    type="search"
+                                    name="q"
+                                    defaultValue={searchTerm}
+                                    className="block w-full p-2 text-sm text-gray-900 border border-gray-300 rounded-lg bg-white focus:ring-blue-500 focus:border-blue-500 pr-8"
+                                    placeholder="Search articles..."
+                                />
+                                {navigation.state === "loading" && navigation.location.search.includes("q=") && (
+                                    <div className="absolute inset-y-0 right-0 flex items-center pr-2">
+                                        <svg className="animate-spin h-4 w-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    </div>
+                                )}
+                            </Form>
+                        </div>
                     </div>
                 </div>
 
-                <ul className="space-y-3">
-                    {docs.map((d, index) => {
-                        const isLast = index === docs.length - 1;
-                        return (
-                            <li key={d.id} ref={isLast ? lastDocElementRef : null}>
-                                <Link
-                                    reloadDocument
-                                    to={`/collections/${collectionName}/${d.id}${searchTerm ? `?q=${searchTerm}` : ''}`}
-                                    className={`block p-2 rounded-md transition-colors ${d.id === doc._id
-                                        ? "bg-blue-50 text-blue-700 border-l-4 border-blue-600"
-                                        : "text-gray-700 hover:bg-gray-100"
-                                        }`}
+                <div className="flex-1 overflow-y-auto px-6 pb-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-300">
+                    <ul className="space-y-3">
+                        {docs.map((d, index) => {
+                            const isLast = index === docs.length - 1;
+                            return (
+                                <li
+                                    key={d.id}
+                                    ref={isLast ? lastDocElementRef : null}
+                                    id={d.id === doc._id ? "active-doc-item" : undefined}
                                 >
-                                    <span className={`block font-medium text-sm flex items-center gap-2 ${d.id === doc._id ? "font-bold" : ""}`}>
-                                        <AudienceIcon audience={(d as any).audience} />
-                                        <span className="truncate">{d.title}</span>
-                                    </span>
-                                    {d.date && (
-                                        <span className="block text-xs text-gray-400 mt-1">
-                                            {new Date(d.date).toLocaleDateString()}
+                                    <Link
+                                        to={`/collections/${collectionName}/${d.id}${searchTerm ? `?q=${searchTerm}` : ''}`}
+                                        className={`block p-2 rounded-md transition-colors ${d.id === doc._id
+                                            ? "bg-blue-50 text-blue-700 border-l-4 border-blue-600"
+                                            : "text-gray-700 hover:bg-gray-100"
+                                            }`}
+                                    >
+                                        <span className={`block font-medium text-sm flex items-center gap-2 ${d.id === doc._id ? "font-bold" : ""}`}>
+                                            <AudienceIcon audience={(d as any).audience} />
+                                            <span className="truncate">{d.title}</span>
                                         </span>
-                                    )}
-                                </Link>
-                            </li>
-                        );
-                    })}
-                </ul>
+                                        {d.date && (
+                                            <span className="block text-xs text-gray-400 mt-1">
+                                                {new Date(d.date).toLocaleDateString()}
+                                            </span>
+                                        )}
+                                    </Link>
+                                </li>
+                            );
+                        })}
+                    </ul>
 
-                {
-                    fetcher.state === "loading" && (
-                        <div className="py-4 text-center text-gray-500 text-sm">
-                            Loading more...
-                        </div>
-                    )
-                }
+                    {
+                        fetcher.state === "loading" && (
+                            <div className="py-4 text-center text-gray-500 text-sm">
+                                Loading more...
+                            </div>
+                        )
+                    }
+                </div>
             </aside >
 
             {/* Main Content */}

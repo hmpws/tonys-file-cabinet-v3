@@ -167,7 +167,7 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
             {/* Mobile/Collapsed Toggle Button */}
             <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="fixed left-4 top-24 z-40 p-2 bg-white border border-gray-200 rounded-md shadow-md text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all print:hidden"
+                className={`fixed top-24 z-40 p-2 bg-white border border-gray-200 rounded-md shadow-md text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all duration-300 ease-in-out print:hidden ${isSidebarOpen ? "left-80 md:left-[21rem]" : "left-4"}`}
                 aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
             >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -182,62 +182,62 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
             {/* Sidebar */}
             <aside
                 className={`
-                    bg-gray-50 border-r border-gray-200 p-6 flex-shrink-0 
-                    h-screen md:h-[calc(100vh-3rem)] overflow-y-auto fixed md:sticky top-0 md:top-12 left-0
+                    bg-gray-50 border-r border-gray-200 flex-shrink-0 flex flex-col
+                    h-screen md:h-[calc(100vh-3rem)] overflow-hidden fixed md:sticky top-0 md:top-12 left-0
                     transition-all duration-300 ease-in-out
                     ${isSidebarOpen ? 'w-full md:w-80 translate-x-0 opacity-100 z-30' : 'w-0 -translate-x-full opacity-0 overflow-hidden p-0 border-none -z-10'}
-                    [&::-webkit-scrollbar]:w-1.5
-                    [&::-webkit-scrollbar-track]:bg-transparent
-                    [&::-webkit-scrollbar-thumb]:bg-gray-200
-                    [&::-webkit-scrollbar-thumb]:rounded-full
-                    hover:[&::-webkit-scrollbar-thumb]:bg-gray-300
                     print:hidden
                 `}
             >
-                <div className="flex justify-end mb-4 md:hidden">
-                    <button onClick={() => setIsSidebarOpen(false)} className="text-gray-500">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                    </button>
-                </div>
+                <div className="p-6 pb-0 flex-shrink-0">
+                    <div className="flex justify-end mb-4 md:hidden">
+                        <button onClick={() => setIsSidebarOpen(false)} className="text-gray-500">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                    </div>
 
-                <div className="mb-6 flex items-center gap-2">
-                    <div className="flex-1 relative">
-                        <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                            <svg className="w-4 h-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
-                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z" />
-                            </svg>
+                    <div className="mb-6 flex items-center gap-2">
+                        <div className="flex-1 relative">
+                            <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                <svg className="w-4 h-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
+                                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z" />
+                                </svg>
+                            </div>
+                            <input
+                                type="search"
+                                className="block w-full p-2 pl-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-white focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="Search collections..."
+                                value={collectionSearchTerm}
+                                onChange={(e) => setCollectionSearchTerm(e.target.value)}
+                            />
                         </div>
-                        <input
-                            type="search"
-                            className="block w-full p-2 pl-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-white focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="Search collections..."
-                            value={collectionSearchTerm}
-                            onChange={(e) => setCollectionSearchTerm(e.target.value)}
-                        />
                     </div>
                 </div>
 
-                <ul className="space-y-1">
-                    {filteredSidebarCollections.map((c) => (
-                        <li key={c.name}>
-                            <Link
-                                to={`/collections/${c.name}`}
-                                className={`block p-2 rounded-md transition-colors ${c.name === collectionName
-                                    ? "bg-blue-50 text-blue-700 border-l-4 border-blue-600 font-bold"
-                                    : "text-gray-700 hover:bg-gray-100"
-                                    }`}
-                                onClick={() => {
-                                    /* Keep sidebar open on desktop, close on mobile if needed. 
-                                       Actually for now let's just leave it up to user to close or typical behavior.
-                                       Usually desktop sidebars stay open. */
-                                    if (window.innerWidth < 768) setIsSidebarOpen(false);
-                                }}
-                            >
-                                {c.name}
-                            </Link>
-                        </li>
-                    ))}
-                </ul>
+                <div className="flex-1 overflow-y-auto px-6 pb-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-300">
+
+                    <ul className="space-y-1">
+                        {filteredSidebarCollections.map((c) => (
+                            <li key={c.name}>
+                                <Link
+                                    to={`/collections/${c.name}`}
+                                    className={`block p-2 rounded-md transition-colors ${c.name === collectionName
+                                        ? "bg-blue-50 text-blue-700 border-l-4 border-blue-600 font-bold"
+                                        : "text-gray-700 hover:bg-gray-100"
+                                        }`}
+                                    onClick={() => {
+                                        /* Keep sidebar open on desktop, close on mobile if needed. 
+                                           Actually for now let's just leave it up to user to close or typical behavior.
+                                           Usually desktop sidebars stay open. */
+                                        if (window.innerWidth < 768) setIsSidebarOpen(false);
+                                    }}
+                                >
+                                    {c.name}
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
             </aside >
 
             {/* Main Content */}
@@ -293,7 +293,6 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                                 {allDocuments.map((doc) => (
                                     <li key={doc.id} className="border-b border-gray-200 last:border-b-0 hover:bg-gray-50 transition-colors duration-200 group">
                                         <Link
-                                            reloadDocument
                                             to={`/collections/${collectionName}/${doc.id}`}
                                             className="block w-full h-full py-4 px-2"
                                         >
