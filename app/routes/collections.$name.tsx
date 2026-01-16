@@ -1,7 +1,7 @@
 import type { Route } from "./+types/collections.$name";
-import { Link, useSearchParams, Form, useSubmit, useNavigation } from "react-router";
+import { Link, useSearchParams, Form, useSubmit, useNavigation, useFetcher } from "react-router";
 import clientPromise from "../db.server";
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 export function meta({ params }: Route.MetaArgs) {
     return [
@@ -17,7 +17,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     const url = new URL(request.url);
     const page = parseInt(url.searchParams.get("page") || "1", 10);
     const searchTerm = url.searchParams.get("q") || "";
-    const limit = 10;
+    const limit = 20;
     const skip = (page - 1) * limit;
 
     const client = await clientPromise;
@@ -102,26 +102,88 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
         c.name.toLowerCase().includes(collectionSearchTerm.toLowerCase())
     );
 
+    // Infinite Scroll Logic
+    const fetcher = useFetcher();
+    const [allDocuments, setAllDocuments] = useState(documents);
+    const [scrolledPage, setScrolledPage] = useState(page);
+    const loadMoreRef = useRef<HTMLDivElement>(null);
+
+    // Reset state when main loader data changes (e.g. search or collection switch)
+    useEffect(() => {
+        setAllDocuments(documents);
+        setScrolledPage(page);
+    }, [documents, page, collectionName]);
+
+    // Handle fetcher completion
+    useEffect(() => {
+        if (fetcher.state === "idle" && fetcher.data) {
+            const newDocs = (fetcher.data as any).documents;
+            const newPage = (fetcher.data as any).page;
+
+            if (newDocs && newDocs.length > 0) {
+                // Check if we already have these docs to prevent dups (basic check)
+                setAllDocuments(prev => {
+                    // If the new page is just the next one, append. 
+                    // If we strictly rely on page number:
+                    if (newPage > scrolledPage) {
+                        return [...prev, ...newDocs];
+                    }
+                    return prev;
+                });
+                if (newPage > scrolledPage) {
+                    setScrolledPage(newPage);
+                }
+            }
+        }
+    }, [fetcher.state, fetcher.data, scrolledPage]);
+
+    // Intersection Observer
+    const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
+        const target = entries[0];
+        if (target.isIntersecting) {
+            if (scrolledPage < totalPages && fetcher.state === "idle") {
+                const params = new URLSearchParams(searchParams);
+                params.set("page", (scrolledPage + 1).toString());
+                fetcher.load(`?${params.toString()}`);
+            }
+        }
+    }, [scrolledPage, totalPages, fetcher, searchParams]);
+
+    useEffect(() => {
+        const option = {
+            root: null,
+            rootMargin: "20px",
+            threshold: 0
+        };
+        const observer = new IntersectionObserver(handleObserver, option);
+        if (loadMoreRef.current) observer.observe(loadMoreRef.current);
+        return () => {
+            if (loadMoreRef.current) observer.unobserve(loadMoreRef.current);
+        };
+    }, [handleObserver]);
+
     return (
         <div className="min-h-screen bg-white font-sans flex flex-col md:flex-row relative">
             {/* Mobile/Collapsed Toggle Button */}
-            {!isSidebarOpen && (
-                <button
-                    onClick={() => setIsSidebarOpen(true)}
-                    className="fixed left-4 top-24 z-20 p-2 bg-white border border-gray-200 rounded-md shadow-md text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all print:hidden"
-                    aria-label="Open sidebar"
-                >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <button
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="fixed left-4 top-24 z-40 p-2 bg-white border border-gray-200 rounded-md shadow-md text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all print:hidden"
+                aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+            >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {isSidebarOpen ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                    ) : (
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                    </svg>
-                </button>
-            )}
+                    )}
+                </svg>
+            </button>
 
             {/* Sidebar */}
             <aside
                 className={`
                     bg-gray-50 border-r border-gray-200 p-6 flex-shrink-0 
-                    h-screen overflow-y-auto fixed md:sticky top-0 left-0
+                    h-screen md:h-[calc(100vh-3rem)] overflow-y-auto fixed md:sticky top-0 md:top-12 left-0
                     transition-all duration-300 ease-in-out
                     ${isSidebarOpen ? 'w-full md:w-80 translate-x-0 opacity-100 z-30' : 'w-0 -translate-x-full opacity-0 overflow-hidden p-0 border-none -z-10'}
                     [&::-webkit-scrollbar]:w-1.5
@@ -153,15 +215,6 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                             onChange={(e) => setCollectionSearchTerm(e.target.value)}
                         />
                     </div>
-                    <button
-                        onClick={() => setIsSidebarOpen(false)}
-                        className="p-2 text-gray-400 hover:text-gray-600 hidden md:block"
-                        aria-label="Collapse sidebar"
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-                        </svg>
-                    </button>
                 </div>
 
                 <ul className="space-y-1">
@@ -185,10 +238,11 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                         </li>
                     ))}
                 </ul>
-            </aside>
+            </aside >
 
             {/* Main Content */}
-            <div className={`flex-1 flex flex-col items-center min-h-screen bg-gray-100 p-4 transition-all duration-300 md:ml-0 ${isSidebarOpen ? 'opacity-50 md:opacity-100' : ''}`}>
+            < div className={`flex-1 flex flex-col items-center min-h-screen bg-gray-100 p-4 transition-all duration-300 md:ml-0 ${isSidebarOpen ? 'opacity-50 md:opacity-100' : ''}`
+            }>
                 <div className="max-w-2xl w-full bg-white shadow-lg rounded-xl overflow-hidden mt-4">
                     <header className="bg-blue-600 text-white p-6">
                         <div className="flex items-center gap-4">
@@ -230,13 +284,13 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                             </Form>
                         </div>
 
-                        {documents.length === 0 ? (
+                        {allDocuments.length === 0 ? (
                             <div className="p-8 text-center text-gray-500">
                                 No documents found in this collection.
                             </div>
                         ) : (
                             <ul className="grid grid-cols-1 gap-4">
-                                {documents.map((doc) => (
+                                {allDocuments.map((doc) => (
                                     <li key={doc.id} className="border-b border-gray-200 last:border-b-0 hover:bg-gray-50 transition-colors duration-200 group">
                                         <Link
                                             reloadDocument
@@ -244,22 +298,22 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                                             className="block w-full h-full py-4 px-2"
                                         >
                                             <div className="flex items-center justify-between">
-                                                <div className="flex flex-col overflow-hidden">
+                                                <div className="flex flex-col overflow-hidden w-full">
                                                     <div className="flex items-baseline space-x-3 truncate">
                                                         <AudienceIcon audience={(doc as any).audience} />
-                                                        <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600 transition-colors">
+                                                        <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600 transition-colors truncate">
                                                             {doc.title}
                                                         </span>
-                                                        {doc.date && (
-                                                            <span className="text-sm text-gray-400 font-normal">
-                                                                {new Date(doc.date).toLocaleDateString("en-US", {
-                                                                    year: 'numeric',
-                                                                    month: 'long',
-                                                                    day: 'numeric'
-                                                                })}
-                                                            </span>
-                                                        )}
                                                     </div>
+                                                    {doc.date && (
+                                                        <span className="text-sm text-gray-400 font-normal mt-1 block">
+                                                            {new Date(doc.date).toLocaleDateString("en-US", {
+                                                                year: 'numeric',
+                                                                month: 'long',
+                                                                day: 'numeric'
+                                                            })}
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <svg
                                                     className="w-5 h-5 text-gray-300 group-hover:text-blue-500 flex-shrink-0 ml-4 transition-colors"
@@ -275,43 +329,30 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                                                     />
                                                 </svg>
                                             </div>
+
                                         </Link>
                                     </li>
                                 ))}
                             </ul>
                         )}
 
-                        {/* Pagination */}
-                        {totalPages > 1 && (
-                            <div className="flex justify-center mt-8 space-x-2">
-                                <Link
-                                    to={`?page=${page - 1}`}
-                                    className={`px-4 py-2 border rounded-md ${page <= 1
-                                        ? "bg-gray-100 text-gray-400 pointer-events-none"
-                                        : "bg-white text-gray-700 hover:bg-gray-50"
-                                        }`}
-                                    aria-disabled={page <= 1}
-                                >
-                                    Previous
-                                </Link>
-                                <span className="px-4 py-2 text-gray-600">
-                                    Page {page} of {totalPages}
-                                </span>
-                                <Link
-                                    to={`?page=${page + 1}`}
-                                    className={`px-4 py-2 border rounded-md ${page >= totalPages
-                                        ? "bg-gray-100 text-gray-400 pointer-events-none"
-                                        : "bg-white text-gray-700 hover:bg-gray-50"
-                                        }`}
-                                    aria-disabled={page >= totalPages}
-                                >
-                                    Next
-                                </Link>
+                        {/* Infinite Scroll Trigger / Loading Indicator */}
+                        <div ref={loadMoreRef} className="h-10 mt-8 flex justify-center w-full">
+                            {fetcher.state === "loading" && (
+                                <svg className="animate-spin h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            )}
+                        </div>
+                        {scrolledPage >= totalPages && totalPages > 1 && (
+                            <div className="text-center text-gray-400 text-sm mt-4">
+                                End of Results
                             </div>
                         )}
                     </main>
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }

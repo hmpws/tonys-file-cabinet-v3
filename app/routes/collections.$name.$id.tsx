@@ -278,24 +278,27 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
     return (
         <div className="min-h-screen bg-white font-sans flex flex-col md:flex-row relative">
             {/* Mobile/Collapsed Toggle Button */}
-            {!isSidebarOpen && (
-                <button
-                    onClick={() => toggleSidebar(true)}
-                    className="fixed left-4 top-24 z-20 p-2 bg-white border border-gray-200 rounded-md shadow-md text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all print:hidden"
-                    aria-label="Open sidebar"
-                >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {/* Mobile/Collapsed Toggle Button */}
+            <button
+                onClick={() => toggleSidebar(!isSidebarOpen)}
+                className="fixed left-4 top-24 z-40 p-2 bg-white border border-gray-200 rounded-md shadow-md text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all print:hidden"
+                aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+            >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {isSidebarOpen ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                    ) : (
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                    </svg>
-                </button>
-            )}
+                    )}
+                </svg>
+            </button>
 
             {/* Sidebar */}
             <aside
                 ref={sidebarRef}
                 className={`
                     bg-gray-50 border-r border-gray-200 p-6 flex-shrink-0 
-                    h-screen overflow-y-auto fixed md:sticky top-0 left-0
+                    h-screen md:h-[calc(100vh-3rem)] overflow-y-auto fixed md:sticky top-0 md:top-12 left-0
                     ${enableTransitions ? 'transition-all duration-300 ease-in-out' : ''}
                     ${isSidebarOpen ? 'w-full md:w-80 translate-x-0 opacity-100 z-30' : 'w-0 -translate-x-full opacity-0 overflow-hidden p-0 border-none -z-10'}
                     [&::-webkit-scrollbar]:w-1.5
@@ -338,15 +341,6 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                             )}
                         </Form>
                     </div>
-                    <button
-                        onClick={() => toggleSidebar(false)}
-                        className="p-2 text-gray-400 hover:text-gray-600 hidden md:block"
-                        aria-label="Collapse sidebar"
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-                        </svg>
-                    </button>
                 </div>
 
                 <ul className="space-y-3">
@@ -377,15 +371,17 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                     })}
                 </ul>
 
-                {fetcher.state === "loading" && (
-                    <div className="py-4 text-center text-gray-500 text-sm">
-                        Loading more...
-                    </div>
-                )}
-            </aside>
+                {
+                    fetcher.state === "loading" && (
+                        <div className="py-4 text-center text-gray-500 text-sm">
+                            Loading more...
+                        </div>
+                    )
+                }
+            </aside >
 
             {/* Main Content */}
-            <div className="flex-1 order-1 md:order-2 bg-white min-h-screen p-4 flex flex-col items-center">
+            < div className="flex-1 order-1 md:order-2 bg-white min-h-screen p-4 flex flex-col items-center" >
                 <div className="max-w-[800px] w-full">
                     <header className="pt-12 pb-8 px-6">
                         <p className="text-blue-600 mb-4 inline-block font-medium">
@@ -473,7 +469,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                         )}
                     </main>
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }
