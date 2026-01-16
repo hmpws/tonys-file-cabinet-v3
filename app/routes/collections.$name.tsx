@@ -42,7 +42,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     const documents = await collection
         .find(filter)
         .sort({ "article.post_date": -1 })
-        .project({ _id: 1, "article.title": 1, "article.post_date": 1 })
+        .project({ _id: 1, "article.title": 1, "article.post_date": 1, "article.audience": 1 })
         .skip(skip)
         .limit(limit)
         .toArray();
@@ -55,6 +55,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
             id: doc._id.toString(),
             title: doc.article?.title || "Untitled Document",
             date: doc.article?.post_date,
+            audience: doc.article?.audience,
         })),
         page,
         totalPages: Math.ceil(totalDocs / limit),
@@ -63,13 +64,38 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     };
 }
 
+const AudienceIcon = ({ audience }: { audience?: string }) => {
+    if (audience === "only_paid") {
+        return (
+            <svg className="w-4 h-4 text-amber-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <title>Paid</title>
+                <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+            </svg>
+        );
+    }
+    if (audience === "founding") {
+        return (
+            <svg className="w-4 h-4 text-purple-600 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <title>Founding</title>
+                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+            </svg>
+        );
+    }
+    return (
+        <svg className="w-4 h-4 text-gray-400 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <title>Everyone</title>
+            <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+        </svg>
+    );
+};
+
 export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
     const { collectionName, documents, page, totalPages, sidebarCollections } = loaderData;
     const [searchParams] = useSearchParams();
     const submit = useSubmit();
     const navigation = useNavigation();
     const isSearching = navigation.state === "loading" && navigation.location.search.includes("q=");
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [collectionSearchTerm, setCollectionSearchTerm] = useState("");
 
     const filteredSidebarCollections = sidebarCollections.filter((c) =>
@@ -213,12 +239,14 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                                 {documents.map((doc) => (
                                     <li key={doc.id} className="border-b border-gray-200 last:border-b-0 hover:bg-gray-50 transition-colors duration-200 group">
                                         <Link
+                                            reloadDocument
                                             to={`/collections/${collectionName}/${doc.id}`}
                                             className="block w-full h-full py-4 px-2"
                                         >
                                             <div className="flex items-center justify-between">
                                                 <div className="flex flex-col overflow-hidden">
                                                     <div className="flex items-baseline space-x-3 truncate">
+                                                        <AudienceIcon audience={(doc as any).audience} />
                                                         <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600 transition-colors">
                                                             {doc.title}
                                                         </span>
