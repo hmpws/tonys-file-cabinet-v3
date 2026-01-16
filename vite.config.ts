@@ -11,15 +11,27 @@ export default defineConfig({
     tsconfigPaths(),
     VitePWA({
       registerType: "autoUpdate",
+      devOptions: {
+        enabled: true,
+      },
       manifest: {
         name: "Tony's File Cabinet",
         short_name: "Tony's",
+        start_url: "/",
+        display: "standalone",
+        background_color: "#ffffff",
         theme_color: "#ffffff",
+        description: "A digital file cabinet for Tony.",
         icons: [
           {
-            src: "/favicon.ico",
-            sizes: "64x64 32x32 24x24 16x16",
-            type: "image/x-icon",
+            src: "/icon-192x192.png",
+            sizes: "192x192",
+            type: "image/png",
+          },
+          {
+            src: "/icon-512x512.png",
+            sizes: "512x512",
+            type: "image/png",
           },
         ],
       },
@@ -45,7 +57,9 @@ export default defineConfig({
           },
           {
             // Cache React Router data requests (both query param and .data extension)
-            urlPattern: ({ url }) => url.searchParams.has("_data") || url.pathname.endsWith(".data"),
+            urlPattern: ({
+              url,
+            }) => url.searchParams.has("_data") || url.pathname.endsWith(".data"),
             handler: "StaleWhileRevalidate",
             options: {
               cacheName: "data",

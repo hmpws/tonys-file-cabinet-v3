@@ -701,7 +701,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
         setActiveAnnotation(null);
     };
 
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [matchesMobile, setMatchesMobile] = useState(false); // Helper to track if we are on mobile
     const [enableTransitions, setEnableTransitions] = useState(false); // State to delay transitions until after restore
     const sidebarRef = useRef<HTMLElement>(null);
