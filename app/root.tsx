@@ -5,13 +5,16 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLocation,
 } from "react-router";
+import { useEffect } from "react";
 
 import type { Route } from "./+types/root";
 import "./app.css";
 import { Breadcrumb } from "./components/Breadcrumb";
 
 export const links: Route.LinksFunction = () => [
+  { rel: "manifest", href: "/manifest.webmanifest" },
   { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
@@ -38,6 +41,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {children}
         <ScrollRestoration />
         <Scripts />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                      console.log('SW registered: ', registration);
+                    })
+                    .catch(registrationError => {
+                      console.log('SW registration failed: ', registrationError);
+                    });
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );
@@ -58,6 +78,16 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   let message = "Oops!";
   let details = "An unexpected error occurred.";
   let stack: string | undefined;
+  const location = useLocation();
+
+  useEffect(() => {
+    // If we are offline and hit an error (likely missing data cache),
+    // force a hard reload to leverage the Service Worker's HTML cache.
+    if (!navigator.onLine) {
+      console.log("Offline error detected. Attempting hard reload to use SW HTML cache.");
+      window.location.reload();
+    }
+  }, [error, location]);
 
   if (isRouteErrorResponse(error)) {
     message = error.status === 404 ? "404" : "Error";
