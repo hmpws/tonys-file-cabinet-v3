@@ -42,7 +42,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   );
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 font-sans p-4">
+    <div className="flex flex-col items-center min-h-screen bg-gray-100 font-sans p-4 pt-16">
       <div className="max-w-2xl w-full bg-white shadow-lg rounded-xl overflow-hidden">
         <header className="bg-blue-600 text-white p-6 flex justify-between items-center">
           <div>

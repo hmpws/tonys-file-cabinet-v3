@@ -241,9 +241,9 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
             </aside >
 
             {/* Main Content */}
-            < div className={`flex-1 flex flex-col items-center min-h-screen bg-gray-100 p-4 transition-all duration-300 md:ml-0 ${isSidebarOpen ? 'opacity-50 pointer-events-none' : ''}`
+            < div className={`flex-1 flex flex-col items-center min-h-screen bg-gray-100 p-4 pt-16 transition-all duration-300 md:ml-0 ${isSidebarOpen ? 'opacity-50 pointer-events-none' : ''}`
             }>
-                <div className="max-w-2xl w-full bg-white shadow-lg rounded-xl overflow-hidden mt-4">
+                <div className="max-w-2xl w-full bg-white shadow-lg rounded-xl overflow-hidden">
                     <header className="bg-blue-600 text-white p-6">
                         <div className="flex items-center gap-4">
                             <div>

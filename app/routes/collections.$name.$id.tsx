@@ -175,15 +175,15 @@ const MediaLink = ({ label, filename, collectionName }: { label: string, filenam
     };
 
     return (
-        <div className="flex items-center gap-2">
-            <span className="font-medium text-gray-500 w-16">{label}:</span>
+        <div className="flex items-center gap-2 max-w-full">
+            <span className="font-medium text-gray-500 w-16 shrink-0">{label}:</span>
             <button
                 onClick={handleCopy}
-                className="font-mono bg-white px-2 py-1 rounded border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition-colors text-left flex items-center gap-2 group relative cursor-pointer"
+                className="font-mono bg-white px-2 py-1 rounded border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition-colors text-left flex items-center gap-2 group relative cursor-pointer min-w-0"
                 title="Click to copy file path"
             >
-                <span className="truncate max-w-[300px]">{filename}</span>
-                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400">
+                <span className="truncate">{filename}</span>
+                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 shrink-0">
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                 </span>
                 {copied && (
@@ -849,10 +849,10 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
 
                     <main className="px-6 pb-20 print:pb-0">
                         {/* Unified Article Wrapper (Target for Annotations) */}
-                        <div ref={articleRef} className="relative group mx-auto print:mx-0 md:grid md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_800px_minmax(0,1fr)] md:gap-6 lg:gap-12 print:grid print:grid-cols-[minmax(0,1fr)_200px] print:gap-6 max-w-[1150px] 2xl:max-w-none print:max-w-none">
+                        <div ref={articleRef} className="relative group mx-auto print:mx-0 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_800px_minmax(0,1fr)] lg:gap-12 print:grid print:grid-cols-[minmax(0,1fr)_200px] print:gap-6 max-w-[1150px] md:max-w-[800px] lg:max-w-[1150px] 2xl:max-w-none print:max-w-none">
 
                             {/* Content Column */}
-                            <div className="md:min-w-0 2xl:col-start-2">
+                            <div className="lg:min-w-0 2xl:col-start-2">
                                 {/* Header Section (Now Annotatable) */}
                                 <header className="pt-12 pb-8">
                                     <p className="text-blue-600 mb-4 inline-block font-medium">
@@ -888,10 +888,13 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                     </div>
 
                                     {/* Media Section */}
-                                    {(doc.video || doc.audio || (doc.media && doc.media.length > 0)) && (
+                                    {(doc.pdf || doc.video || doc.audio || (doc.media && doc.media.length > 0)) && (
                                         <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
                                             <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Media Files</h3>
                                             <div className="space-y-2 text-sm text-gray-700">
+                                                {doc.pdf && (
+                                                    <MediaLink label="PDF" filename={doc.pdf} collectionName={collectionName} />
+                                                )}
                                                 {doc.video && (
                                                     <MediaLink label="Video" filename={doc.video} collectionName={collectionName} />
                                                 )}
@@ -941,7 +944,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                             </div>
 
                             {/* Side Notes (Cliff Notes) - Desktop & Print */}
-                            <div className="hidden md:block print:block relative w-full 2xl:w-[300px] h-full pointer-events-none 2xl:col-start-3">
+                            <div className="hidden lg:block print:block relative w-full 2xl:w-[300px] h-full pointer-events-none 2xl:col-start-3">
                                 {positionedAnnotations.map(ann => {
                                     const isGeneral = ann.isGeneral;
                                     return (
