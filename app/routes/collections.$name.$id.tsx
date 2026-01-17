@@ -206,6 +206,20 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
     const [docs, setDocs] = useState(sidebarDocuments);
     const [page, setPage] = useState(1);
     const [isRestored, setIsRestored] = useState(false);
+    const [isOnline, setIsOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
+    const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+    useEffect(() => {
+        const handleStatusChange = () => {
+            setIsOnline(navigator.onLine);
+        };
+        window.addEventListener("online", handleStatusChange);
+        window.addEventListener("offline", handleStatusChange);
+        return () => {
+            window.removeEventListener("online", handleStatusChange);
+            window.removeEventListener("offline", handleStatusChange);
+        };
+    }, []);
 
     // Annotation UI State
     const [activeAnnotation, setActiveAnnotation] = useState<{ id: string, rect: DOMRect } | null>(null);
@@ -564,10 +578,33 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
         if (fetcher.state === "loading") return;
         if (observer.current) observer.current.disconnect();
         observer.current = new IntersectionObserver(entries => {
-            if (entries[0].isIntersecting && page < totalPages) {
-                const nextPage = page + 1;
-                fetcher.load(`?page=${nextPage}${searchTerm ? `&q=${searchTerm}` : ''}`);
-                setPage(nextPage);
+            if (entries[0].isIntersecting) {
+                if (debounceRef.current) clearTimeout(debounceRef.current);
+                debounceRef.current = setTimeout(async () => {
+                    let currentlyOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
+                    if (currentlyOnline && 'connection' in navigator) {
+                        const conn = (navigator as any).connection;
+                        if (conn && conn.downlink === 0) {
+                            currentlyOnline = false;
+                        }
+                    }
+
+                    if (currentlyOnline) {
+                        try {
+                            await fetch(`/?_ping=${Date.now()}`, { method: 'HEAD', cache: 'no-store' });
+                        } catch (e) {
+                            currentlyOnline = false;
+                        }
+                    }
+
+                    setIsOnline(currentlyOnline);
+
+                    if (page < totalPages && currentlyOnline) {
+                        const nextPage = page + 1;
+                        fetcher.load(`?page=${nextPage}${searchTerm ? `&q=${searchTerm}` : ''}`);
+                        setPage(nextPage);
+                    }
+                }, 300);
             }
         });
         if (node) observer.current.observe(node);
@@ -833,6 +870,13 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                         })}
                     </ul>
 
+                    {
+                        !isOnline && (
+                            <div className="text-amber-600 bg-amber-50 px-3 py-1 rounded-full text-sm font-medium border border-amber-200 mb-2 text-center mx-4">
+                                You are currently offline. Pages cannot be loaded.
+                            </div>
+                        )
+                    }
                     {
                         fetcher.state === "loading" && (
                             <div className="py-4 text-center text-gray-500 text-sm">

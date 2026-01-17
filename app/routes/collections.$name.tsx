@@ -107,6 +107,20 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
     const [allDocuments, setAllDocuments] = useState(documents);
     const [scrolledPage, setScrolledPage] = useState(page);
     const loadMoreRef = useRef<HTMLDivElement>(null);
+    const [isOnline, setIsOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
+    const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+    useEffect(() => {
+        const handleStatusChange = () => {
+            setIsOnline(navigator.onLine);
+        };
+        window.addEventListener("online", handleStatusChange);
+        window.addEventListener("offline", handleStatusChange);
+        return () => {
+            window.removeEventListener("online", handleStatusChange);
+            window.removeEventListener("offline", handleStatusChange);
+        };
+    }, []);
 
     // Reset state when main loader data changes (e.g. search or collection switch)
     useEffect(() => {
@@ -141,11 +155,40 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
     const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
         const target = entries[0];
         if (target.isIntersecting) {
-            if (scrolledPage < totalPages && fetcher.state === "idle") {
-                const params = new URLSearchParams(searchParams);
-                params.set("page", (scrolledPage + 1).toString());
-                fetcher.load(`?${params.toString()}`);
-            }
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+
+            debounceRef.current = setTimeout(async () => {
+                // 1. Initial State Check
+                let currentlyOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
+
+                // 2. Extended Connection Object Check
+                if (currentlyOnline && 'connection' in navigator) {
+                    const conn = (navigator as any).connection;
+                    if (conn && conn.downlink === 0) {
+                        currentlyOnline = false;
+                    }
+                }
+
+                // 3. Active Probe (The Truth) - only if we think we are online
+                if (currentlyOnline) {
+                    try {
+                        // Attempt a HEAD request to root with cache busting
+                        // This forces a network trip. If it fails, we are offline.
+                        await fetch(`/?_ping=${Date.now()}`, { method: 'HEAD', cache: 'no-store' });
+                    } catch (e) {
+                        currentlyOnline = false;
+                    }
+                }
+
+                // Update state if it changed to ensure UI reflects reality
+                setIsOnline(currentlyOnline);
+
+                if (scrolledPage < totalPages && fetcher.state === "idle" && currentlyOnline) {
+                    const params = new URLSearchParams(searchParams);
+                    params.set("page", (scrolledPage + 1).toString());
+                    fetcher.load(`?${params.toString()}`);
+                }
+            }, 300); // 300ms debounce
         }
     }, [scrolledPage, totalPages, fetcher, searchParams]);
 
@@ -336,7 +379,12 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                         )}
 
                         {/* Infinite Scroll Trigger / Loading Indicator */}
-                        <div ref={loadMoreRef} className="h-10 mt-8 flex justify-center w-full">
+                        <div ref={loadMoreRef} className="h-10 mt-8 flex flex-col items-center justify-center w-full">
+                            {!isOnline && (
+                                <div className="text-amber-600 bg-amber-50 px-3 py-1 rounded-full text-sm font-medium border border-amber-200 mb-2">
+                                    You are currently offline. Pages cannot be loaded.
+                                </div>
+                            )}
                             {fetcher.state === "loading" && (
                                 <svg className="animate-spin h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
