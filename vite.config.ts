@@ -47,7 +47,7 @@ export default defineConfig({
               cacheName: "pages",
               networkTimeoutSeconds: 3, // Fallback to cache after 3s
               expiration: {
-                maxEntries: 50,
+                maxEntries: 500,
                 maxAgeSeconds: 30 * 24 * 60 * 60, // 30 Days
               },
               cacheableResponse: {
@@ -64,7 +64,7 @@ export default defineConfig({
             options: {
               cacheName: "data",
               expiration: {
-                maxEntries: 50,
+                maxEntries: 500,
                 maxAgeSeconds: 30 * 24 * 60 * 60, // 30 Days
               },
               cacheableResponse: {
