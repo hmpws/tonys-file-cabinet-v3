@@ -12,6 +12,7 @@ import { useEffect } from "react";
 import type { Route } from "./+types/root";
 import "./app.css";
 import { Breadcrumb } from "./components/Breadcrumb";
+import { ProgressBar } from "./components/ProgressBar";
 
 export const links: Route.LinksFunction = () => [
   { rel: "manifest", href: "/manifest.webmanifest" },
@@ -66,6 +67,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <>
+      <ProgressBar />
       <div className="print:hidden sticky top-0 z-50 bg-white">
         <Breadcrumb />
       </div>
