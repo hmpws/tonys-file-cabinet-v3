@@ -137,5 +137,89 @@ export async function action({ request }: Route.ActionArgs) {
         return { success: true };
     }
 
+    if (intent === "toggleStatus") {
+        const documentId = formData.get("documentId") as string;
+        const collectionName = formData.get("collectionName") as string;
+        const field = formData.get("field") as string; // "read" or "liked"
+        const value = formData.get("value") === "true"; // "true" -> true, others -> false
+
+        if (!documentId || !collectionName || !["read", "liked"].includes(field)) {
+            throw data({ error: "Missing required fields or invalid field" }, { status: 400 });
+        }
+
+        const filter = { documentId, collectionName, range: null };
+
+        // We use $set to update the specific field without overwriting others (comment, tags, etc.)
+        // But we must also ensure base fields exist if this is the first time we touch the general note.
+        // $setOnInsert is used for that.
+
+        const update = {
+            $set: {
+                [field]: value,
+                updatedAt: new Date(),
+                userId // Update owner on toggle? Maybe just last modifier.
+            },
+            $setOnInsert: {
+                username: "User",
+                createdAt: new Date(),
+                comment: "",
+                tags: [],
+                color: "#e5e7eb",
+                range: null
+            }
+        };
+
+        await collection.updateOne(filter, update, { upsert: true });
+
+        return { success: true, field, value };
+    }
+
+    if (intent === "addTag") {
+        const documentId = formData.get("documentId") as string;
+        const collectionName = formData.get("collectionName") as string;
+        const tag = formData.get("tag") as string;
+
+        if (!documentId || !collectionName || !tag) {
+            throw data({ error: "Missing required fields" }, { status: 400 });
+        }
+
+        const filter = { documentId, collectionName, range: null };
+        const update = {
+            $addToSet: { tags: tag },
+            $set: { updatedAt: new Date(), userId },
+            $setOnInsert: {
+                username: "User",
+                createdAt: new Date(),
+                comment: "",
+                color: "#e5e7eb",
+                read: false,
+                liked: false,
+                range: null
+            }
+        };
+
+        await collection.updateOne(filter, update, { upsert: true });
+        return { success: true };
+    }
+
+    if (intent === "removeTag") {
+        const documentId = formData.get("documentId") as string;
+        const collectionName = formData.get("collectionName") as string;
+        const tag = formData.get("tag") as string;
+
+        if (!documentId || !collectionName || !tag) {
+            throw data({ error: "Missing required fields" }, { status: 400 });
+        }
+
+        const filter = { documentId, collectionName, range: null };
+        const update: any = {
+            $pull: { tags: tag },
+            $set: { updatedAt: new Date(), userId }
+        };
+
+        await collection.updateOne(filter, update);
+        return { success: true };
+    }
+
     throw data({ error: "Invalid intent" }, { status: 400 });
 }

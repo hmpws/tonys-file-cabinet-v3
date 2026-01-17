@@ -93,7 +93,22 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         .project({ _id: 1, "article.title": 1, "article.post_date": 1, "article.audience": 1 })
         .skip(skip)
         .limit(limit)
+        .limit(limit)
         .toArray();
+
+    // 4. Fetch Statuses (Read/Liked) for Sidebar & Current Doc
+    const sidebarIds = sidebarDocs.map(d => d._id.toString());
+    const allIds = [...sidebarIds, params.id]; // Include current doc
+
+    const statusMap: Record<string, { read: boolean, liked: boolean, tags: string[] }> = {};
+    const statuses = await db.collection("#annotations").find({
+        documentId: { $in: allIds },
+        range: null
+    }).project({ documentId: 1, read: 1, liked: 1, tags: 1 }).toArray();
+
+    statuses.forEach(s => {
+        statusMap[s.documentId] = { read: !!s.read, liked: !!s.liked, tags: s.tags || [] };
+    });
 
     const totalDocs = await collection.countDocuments(filter);
 
@@ -101,12 +116,15 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         collectionName: params.name,
         id: params.id,
         doc: JSON.parse(JSON.stringify(doc)),
+        docStatus: statusMap[params.id as string] || { read: false, liked: false, tags: [] },
         // Sidebar data
         sidebarDocuments: sidebarDocs.map((d) => ({
             id: d._id.toString(),
             title: d.article?.title || "Untitled Document",
             date: d.article?.post_date,
             audience: d.article?.audience,
+            read: statusMap[d._id.toString()]?.read || false,
+            liked: statusMap[d._id.toString()]?.liked || false,
         })),
         page, // This is the max page loaded
         totalPages: Math.ceil(totalDocs / itemsPerPage), // Calculate totals based on per-page limit
@@ -208,6 +226,50 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
     const [isRestored, setIsRestored] = useState(false);
     const [isOnline, setIsOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
     const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Document Status (Read/Liked)
+    const [docStatus, setDocStatus] = useState(loaderData.docStatus);
+    const statusFetcher = useFetcher();
+
+    useEffect(() => {
+        setDocStatus(loaderData.docStatus);
+    }, [loaderData.docStatus]);
+
+    const toggleStatus = (field: "read" | "liked") => {
+        const newValue = !docStatus[field];
+        setDocStatus((prev: any) => ({ ...prev, [field]: newValue })); // Optimistic
+
+        statusFetcher.submit({
+            intent: "toggleStatus",
+            documentId: doc._id,
+            collectionName,
+            field,
+            value: String(newValue)
+        }, { method: "post", action: "/api/annotations" });
+    };
+
+    const addTag = (tag: string) => {
+        if (!tag || docStatus.tags?.includes(tag)) return;
+        setDocStatus((prev: any) => ({ ...prev, tags: [...(prev.tags || []), tag] }));
+
+        statusFetcher.submit({
+            intent: "addTag",
+            documentId: doc._id,
+            collectionName,
+            tag
+        }, { method: "post", action: "/api/annotations" });
+    };
+
+    const removeTag = (tag: string) => {
+        setDocStatus((prev: any) => ({ ...prev, tags: (prev.tags || []).filter((t: string) => t !== tag) }));
+
+        statusFetcher.submit({
+            intent: "removeTag",
+            documentId: doc._id,
+            collectionName,
+            tag
+        }, { method: "post", action: "/api/annotations" });
+    };
 
     useEffect(() => {
         const handleStatusChange = () => {
@@ -857,7 +919,11 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                     >
                                         <span className={`block font-medium text-sm flex items-center gap-2 ${d.id === doc._id ? "font-bold" : ""}`}>
                                             <AudienceIcon audience={(d as any).audience} />
-                                            <span className="truncate">{d.title}</span>
+                                            <span className="truncate flex-1">{d.title}</span>
+                                            <span className="flex items-center gap-1 shrink-0">
+                                                {(d as any).read && <span title="Read" className="text-xs">✅</span>}
+                                                {(d as any).liked && <span title="Liked" className="text-xs">❤️</span>}
+                                            </span>
                                         </span>
                                         {d.date && (
                                             <span className="block text-xs text-gray-400 mt-1">
@@ -919,16 +985,92 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                         </div>
                                     )}
 
-                                    <div className="flex items-center text-gray-500 text-sm border-t border-gray-100 pt-4 mt-4">
-                                        {doc.article?.post_date && (
-                                            <time dateTime={doc.article.post_date}>
-                                                {new Date(doc.article.post_date).toLocaleDateString("en-US", {
-                                                    year: 'numeric',
-                                                    month: 'long',
-                                                    day: 'numeric'
-                                                })}
-                                            </time>
-                                        )}
+                                    {/* Link Tags Row */}
+                                    <div className="flex flex-wrap items-center gap-2 mb-4">
+                                        {docStatus.tags && docStatus.tags.map((tag: string, i: number) => (
+                                            <span key={i} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200">
+                                                {tag}
+                                                <button
+                                                    onClick={() => removeTag(tag)}
+                                                    className="ml-1.5 text-gray-400 hover:text-red-500 focus:outline-none print:hidden"
+                                                    title="Remove tag"
+                                                >
+                                                    &times;
+                                                </button>
+                                            </span>
+                                        ))}
+                                        <div className="relative print:hidden">
+                                            <input
+                                                type="text"
+                                                placeholder="+ Tag"
+                                                className="w-20 text-xs border border-gray-300 bg-white text-gray-900 rounded-full px-3 py-1.5 focus:w-32 focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all placeholder-gray-500 shadow-sm"
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter" || e.key === ",") {
+                                                        e.preventDefault();
+                                                        const val = (e.target as HTMLInputElement).value.trim();
+                                                        if (val) {
+                                                            addTag(val);
+                                                            (e.target as HTMLInputElement).value = "";
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-gray-500 text-sm border-t border-gray-100 pt-4 mt-4">
+                                        <div>
+                                            {doc.article?.post_date && (
+                                                <time dateTime={doc.article.post_date}>
+                                                    {new Date(doc.article.post_date).toLocaleDateString("en-US", {
+                                                        year: 'numeric',
+                                                        month: 'long',
+                                                        day: 'numeric'
+                                                    })}
+                                                </time>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <button
+                                                onClick={() => toggleStatus('read')}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-300 text-gray-900 bg-white hover:bg-gray-50 transition-colors"
+                                            >
+                                                <span>
+                                                    {docStatus.read ? "✅" : (
+                                                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" opacity="0" /> {/* Hidden check for sizing/visual consistency if needed, or just a box */}
+                                                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" strokeWidth="2" />
+                                                        </svg>
+                                                    )}
+                                                </span>
+                                                <span className="font-medium">Read</span>
+                                            </button>
+                                            <button
+                                                onClick={() => toggleStatus('liked')}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-300 text-gray-900 bg-white hover:bg-gray-50 transition-colors"
+                                            >
+                                                <span>{docStatus.liked ? "❤️" : "♡"}</span>
+                                                <span className="font-medium">Liked</span>
+                                            </button>
+
+                                            {/* Print Views (Buttons are hidden by global CSS) */}
+                                            <div className="hidden print:flex items-center gap-4">
+                                                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-300 text-gray-900 bg-white">
+                                                    <span>
+                                                        {docStatus.read ? "✅" : (
+                                                            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" strokeWidth="2" />
+                                                            </svg>
+                                                        )}
+                                                    </span>
+                                                    <span className="font-medium">Read</span>
+                                                </span>
+                                                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-300 text-gray-900 bg-white">
+                                                    <span>{docStatus.liked ? "❤️" : "♡"}</span>
+                                                    <span className="font-medium">Liked</span>
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* Media Section */}
@@ -1020,15 +1162,8 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                             )}
                                             <div className="flex-1 min-w-0">
                                                 {/* Only show tags for General Note (Index 0) */}
-                                                {(ann.isGeneral || !ann.range) && ann.tags && ann.tags.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1 mb-2">
-                                                        {ann.tags.map((tag: string, i: number) => (
-                                                            <span key={i} className="annotation-tag inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800 border border-transparent print:border-gray-300 print:bg-white">
-                                                                {tag}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
+                                                {/* REMOVED TAGS FROM SIDE NOTE */}
+                                                {(ann.isGeneral || !ann.range) && (/* Nothing here now */ null)}
                                                 {ann.comment ? (
                                                     <div className="text-gray-800 min-w-0 break-words">{ann.comment}</div>
                                                 ) : (
@@ -1081,36 +1216,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
 
                                 {isGeneral && (
                                     <div className="mb-3">
-                                        <input
-                                            type="text"
-                                            className="w-full border border-gray-300 rounded text-xs p-1.5 mb-2 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none text-gray-900 bg-white"
-                                            placeholder="Add tags... (Enter or comma)"
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter" || e.key === ",") {
-                                                    e.preventDefault();
-                                                    const val = (e.target as HTMLInputElement).value.trim();
-                                                    if (val && !editingTags.includes(val)) {
-                                                        setEditingTags([...editingTags, val]);
-                                                        (e.target as HTMLInputElement).value = "";
-                                                    }
-                                                }
-                                            }}
-                                        />
-                                        {editingTags.length > 0 && (
-                                            <div className="flex flex-wrap gap-1">
-                                                {editingTags.map((tag, i) => (
-                                                    <span key={i} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                                        {tag}
-                                                        <button
-                                                            onClick={() => setEditingTags(editingTags.filter(t => t !== tag))}
-                                                            className="ml-1 text-blue-600 hover:text-blue-900 focus:outline-none"
-                                                        >
-                                                            &times;
-                                                        </button>
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
+                                        {/* REMOVED TAG INPUT FROM GENERAL NOTE POPOVER */}
                                     </div>
                                 )}
                                 <textarea

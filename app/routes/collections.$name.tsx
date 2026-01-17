@@ -45,9 +45,22 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         .project({ _id: 1, "article.title": 1, "article.post_date": 1, "article.audience": 1 })
         .skip(skip)
         .limit(limit)
+        .limit(limit)
         .toArray();
 
     const totalDocs = await collection.countDocuments(filter);
+
+    // Fetch Statuses
+    const docIds = documents.map(d => d._id.toString());
+    const statusMap: Record<string, { read: boolean, liked: boolean }> = {};
+    const statuses = await db.collection("#annotations").find({
+        documentId: { $in: docIds },
+        range: null
+    }).project({ documentId: 1, read: 1, liked: 1 }).toArray();
+
+    statuses.forEach(s => {
+        statusMap[s.documentId] = { read: !!s.read, liked: !!s.liked };
+    });
 
     return {
         collectionName: params.name,
@@ -56,6 +69,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
             title: doc.article?.title || "Untitled Document",
             date: doc.article?.post_date,
             audience: doc.article?.audience,
+            read: statusMap[doc._id.toString()]?.read || false,
+            liked: statusMap[doc._id.toString()]?.liked || false,
         })),
         page,
         totalPages: Math.ceil(totalDocs / limit),
@@ -345,6 +360,10 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                                                         <AudienceIcon audience={(doc as any).audience} />
                                                         <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600 transition-colors truncate">
                                                             {doc.title}
+                                                        </span>
+                                                        <span className="flex items-center gap-1 ml-2 shrink-0">
+                                                            {(doc as any).read && <span title="Read" className="text-base">✅</span>}
+                                                            {(doc as any).liked && <span title="Liked" className="text-base">❤️</span>}
                                                         </span>
                                                     </div>
                                                     {doc.date && (
