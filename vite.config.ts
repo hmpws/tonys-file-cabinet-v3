@@ -60,7 +60,7 @@ export default defineConfig({
             urlPattern: ({
               url,
             }) => url.searchParams.has("_data") || url.pathname.endsWith(".data"),
-            handler: "StaleWhileRevalidate",
+            handler: "NetworkFirst",
             options: {
               cacheName: "data",
               expiration: {

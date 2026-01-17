@@ -125,6 +125,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
             audience: d.article?.audience,
             read: statusMap[d._id.toString()]?.read || false,
             liked: statusMap[d._id.toString()]?.liked || false,
+            tags: statusMap[d._id.toString()]?.tags || [],
         })),
         page, // This is the max page loaded
         totalPages: Math.ceil(totalDocs / itemsPerPage), // Calculate totals based on per-page limit
@@ -804,6 +805,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
     const [matchesMobile, setMatchesMobile] = useState(false); // Helper to track if we are on mobile
     const [enableTransitions, setEnableTransitions] = useState(false); // State to delay transitions until after restore
     const sidebarRef = useRef<HTMLElement>(null);
+    const toggleButtonRef = useRef<HTMLButtonElement>(null);
 
     // Persist sidebar open state
     useEffect(() => {
@@ -817,6 +819,24 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
         }, 150);
         return () => clearTimeout(timer);
     }, []);
+
+    // Click outside to close sidebar
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (isSidebarOpen &&
+                sidebarRef.current &&
+                !sidebarRef.current.contains(event.target as Node) &&
+                toggleButtonRef.current &&
+                !toggleButtonRef.current.contains(event.target as Node)) {
+                toggleSidebar(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [isSidebarOpen]);
 
     // Scroll active document into view
     useEffect(() => {
@@ -840,6 +860,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
         <div className="min-h-screen bg-white font-sans flex flex-col md:flex-row relative">
             {/* Mobile/Collapsed Toggle Button */}
             <button
+                ref={toggleButtonRef}
                 onClick={() => toggleSidebar(!isSidebarOpen)}
                 className={`fixed top-24 z-40 p-2 bg-white border border-gray-200 rounded-md shadow-md text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all duration-300 ease-in-out print:hidden ${isSidebarOpen ? "left-80 md:left-[21rem]" : "left-4"}`}
                 aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
@@ -925,11 +946,22 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                                 {(d as any).liked && <span title="Liked" className="text-xs">❤️</span>}
                                             </span>
                                         </span>
-                                        {d.date && (
-                                            <span className="block text-xs text-gray-400 mt-1">
-                                                {new Date(d.date).toLocaleDateString()}
-                                            </span>
-                                        )}
+                                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                                            {d.date && (
+                                                <span className="block text-xs text-gray-400">
+                                                    {new Date(d.date).toLocaleDateString()}
+                                                </span>
+                                            )}
+                                            {(d as any).tags && (d as any).tags.length > 0 && (
+                                                <div className="flex flex-wrap gap-1">
+                                                    {(d as any).tags.map((tag: string, i: number) => (
+                                                        <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                                                            {tag}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     </Link>
                                 </li>
                             );

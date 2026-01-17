@@ -52,14 +52,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
     // Fetch Statuses
     const docIds = documents.map(d => d._id.toString());
-    const statusMap: Record<string, { read: boolean, liked: boolean }> = {};
+    const statusMap: Record<string, { read: boolean, liked: boolean, tags: string[] }> = {};
     const statuses = await db.collection("#annotations").find({
         documentId: { $in: docIds },
         range: null
-    }).project({ documentId: 1, read: 1, liked: 1 }).toArray();
+    }).project({ documentId: 1, read: 1, liked: 1, tags: 1 }).toArray();
 
     statuses.forEach(s => {
-        statusMap[s.documentId] = { read: !!s.read, liked: !!s.liked };
+        statusMap[s.documentId] = { read: !!s.read, liked: !!s.liked, tags: s.tags || [] };
     });
 
     return {
@@ -71,6 +71,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
             audience: doc.article?.audience,
             read: statusMap[doc._id.toString()]?.read || false,
             liked: statusMap[doc._id.toString()]?.liked || false,
+            tags: statusMap[doc._id.toString()]?.tags || [],
         })),
         page,
         totalPages: Math.ceil(totalDocs / limit),
@@ -111,11 +112,31 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
     const navigation = useNavigation();
     const isSearching = navigation.state === "loading" && navigation.location.search.includes("q=");
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const sidebarRef = useRef<HTMLElement>(null);
+    const toggleButtonRef = useRef<HTMLButtonElement>(null);
     const [collectionSearchTerm, setCollectionSearchTerm] = useState("");
 
     const filteredSidebarCollections = sidebarCollections.filter((c) =>
         c.name.toLowerCase().includes(collectionSearchTerm.toLowerCase())
     );
+
+    // Click outside to close sidebar
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (isSidebarOpen &&
+                sidebarRef.current &&
+                !sidebarRef.current.contains(event.target as Node) &&
+                toggleButtonRef.current &&
+                !toggleButtonRef.current.contains(event.target as Node)) {
+                setIsSidebarOpen(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [isSidebarOpen]);
 
     // Infinite Scroll Logic
     const fetcher = useFetcher();
@@ -224,6 +245,7 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
         <div className="min-h-screen bg-white font-sans flex flex-col md:flex-row relative">
             {/* Mobile/Collapsed Toggle Button */}
             <button
+                ref={toggleButtonRef}
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                 className={`fixed top-24 z-40 p-2 bg-white border border-gray-200 rounded-md shadow-md text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all duration-300 ease-in-out print:hidden ${isSidebarOpen ? "left-80 md:left-[21rem]" : "left-4"}`}
                 aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
@@ -239,6 +261,7 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
 
             {/* Sidebar */}
             <aside
+                ref={sidebarRef}
                 className={`
                     bg-gray-50 border-r border-gray-200 flex-shrink-0 flex flex-col
                     h-screen md:h-[calc(100vh-3rem)] overflow-hidden fixed top-0 md:top-12 left-0
@@ -366,15 +389,26 @@ export default function CollectionRoute({ loaderData }: Route.ComponentProps) {
                                                             {(doc as any).liked && <span title="Liked" className="text-base">❤️</span>}
                                                         </span>
                                                     </div>
-                                                    {doc.date && (
-                                                        <span className="text-sm text-gray-400 font-normal mt-1 block">
-                                                            {new Date(doc.date).toLocaleDateString("en-US", {
-                                                                year: 'numeric',
-                                                                month: 'long',
-                                                                day: 'numeric'
-                                                            })}
-                                                        </span>
-                                                    )}
+                                                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                                                        {doc.date && (
+                                                            <span className="text-sm text-gray-400 font-normal block">
+                                                                {new Date(doc.date).toLocaleDateString("en-US", {
+                                                                    year: 'numeric',
+                                                                    month: 'long',
+                                                                    day: 'numeric'
+                                                                })}
+                                                            </span>
+                                                        )}
+                                                        {(doc as any).tags && (doc as any).tags.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {(doc as any).tags.map((tag: string, i: number) => (
+                                                                    <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                                                                        {tag}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <svg
                                                     className="w-5 h-5 text-gray-300 group-hover:text-blue-500 flex-shrink-0 ml-4 transition-colors"
