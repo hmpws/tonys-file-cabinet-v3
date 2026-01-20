@@ -15,20 +15,10 @@ import { requireUser } from "../sessions.server";
 export async function loader({ request }: Route.LoaderArgs) {
   await requireUser(request);
   const client = await clientPromise;
-  const db = client.db("substack");
-  const collectionsList = await db.listCollections().toArray();
-  collectionsList.sort((a, b) => a.name.localeCompare(b.name));
 
-  const collections = await Promise.all(
-    collectionsList.map(async (c) => {
-      const doc = await db.collection(c.name).findOne({}, { sort: { "article.post_date": -1 }, projection: { "article.post_date": 1 } });
-      const lastFetched = doc?.article?.post_date || null;
-      return {
-        name: c.name,
-        lastFetched
-      };
-    })
-  );
+  // Use the new helper to get collections from both databases
+  const { getAllCollections } = await import("../db.server");
+  const collections = await getAllCollections(client);
 
   return { collections: collections.filter((c) => c.name !== "annotations" && !c.name.startsWith("#")) };
 }

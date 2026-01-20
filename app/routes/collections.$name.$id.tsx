@@ -37,8 +37,16 @@ import { requireUser } from "../sessions.server";
 export async function loader({ params, request }: Route.LoaderArgs) {
     await requireUser(request);
     const client = await clientPromise;
-    const db = client.db("substack");
-    const collection = db.collection(params.name);
+    const { getCollectionConnection } = await import("../db.server");
+
+    // 1. Get correct DB connection
+    const { collection, dbName } = await getCollectionConnection(client, params.name);
+    // Annotations always live in substack DB
+    const annotationDb = client.db("substack");
+
+    // Determine date field
+    const isGhost = dbName === "ghost";
+    const dateField = isGhost ? "article.published_at" : "article.post_date";
 
     // 1. Fetch Current Document First
     let doc;
@@ -52,6 +60,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         throw new Response("Document Not Found", { status: 404 });
     }
 
+    // Normalize date for consistency in UI and Logic
+    // If it's Ghost, we map published_at to post_date so the rest of the app "just works"
+    if (isGhost && (doc.article as any)?.published_at) {
+        if (!doc.article) doc.article = {} as any;
+        doc.article.post_date = (doc.article as any).published_at;
+    }
+
     // 2. Determine Page for Sidebar
     const url = new URL(request.url);
     const searchTerm = url.searchParams.get("q") || "";
@@ -63,18 +78,12 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         : {};
 
     // Calculate position of current doc to ensure it's loaded
-    // Only calculate if we are viewing the main list (no active search filtering that might exclude this doc)
-    // Or if search logic allows, but typically we want context.
-    // If searchTerm is present, the doc might not even be in the result set if it doesn't match.
-    // We'll perform the position count using the SAME filter.
-
     let targetPage = 1;
     if (doc.article?.post_date) {
-        // Count how many docs are "before" this one in the sort order (post_date descending)
-        // If searching, this only counts matching docs before this one.
+        // Count how many docs are "before" this one in the sort order (descending)
         const positionQuery = {
             ...filter,
-            "article.post_date": { $gt: doc.article.post_date }
+            [dateField]: { $gt: doc.article.post_date }
         };
         const countBefore = await collection.countDocuments(positionQuery);
         targetPage = Math.ceil((countBefore + 1) / itemsPerPage);
@@ -87,10 +96,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     const skip = 0;
 
     // 3. Fetch Sidebar Data with sufficient limit
+    // Projection needs the correct date field
+    const projectFields: any = { _id: 1, "article.title": 1, "article.audience": 1 };
+    projectFields[dateField] = 1;
+
     const sidebarDocs = await collection
         .find(filter)
-        .sort({ "article.post_date": -1 })
-        .project({ _id: 1, "article.title": 1, "article.post_date": 1, "article.audience": 1 })
+        .sort({ [dateField]: -1 })
+        .project(projectFields)
         .skip(skip)
         .limit(limit)
         .limit(limit)
@@ -101,7 +114,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     const allIds = [...sidebarIds, params.id]; // Include current doc
 
     const statusMap: Record<string, { read: boolean, liked: boolean, tags: string[] }> = {};
-    const statuses = await db.collection("#annotations").find({
+    const statuses = await annotationDb.collection("#annotations").find({
         documentId: { $in: allIds },
         range: null
     }).project({ documentId: 1, read: 1, liked: 1, tags: 1 }).toArray();
@@ -121,12 +134,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         sidebarDocuments: sidebarDocs.map((d) => ({
             id: d._id.toString(),
             title: d.article?.title || "Untitled Document",
-            date: d.article?.post_date,
+            // Map correct date field to 'date'
+            date: isGhost ? (d.article as any).published_at : d.article?.post_date,
             audience: d.article?.audience,
             read: statusMap[d._id.toString()]?.read || false,
             liked: statusMap[d._id.toString()]?.liked || false,
             tags: statusMap[d._id.toString()]?.tags || [],
         })),
+        source: isGhost ? "ghost" : "substack", // Pass source to component
         page, // This is the max page loaded
         totalPages: Math.ceil(totalDocs / itemsPerPage), // Calculate totals based on per-page limit
         searchTerm,
@@ -176,13 +191,13 @@ const Comment = ({ comment }: { comment: any }) => (
     </div>
 );
 
-const MediaLink = ({ label, filename, collectionName }: { label: string, filename: string, collectionName: string }) => {
+const MediaLink = ({ label, filename, collectionName, source }: { label: string, filename: string, collectionName: string, source: string }) => {
     const [copied, setCopied] = useState(false);
 
     const handleCopy = (e: React.MouseEvent) => {
         e.preventDefault();
         const mediaFolder = "H:/My Drive/Scraper/media";
-        const path = `file:///${mediaFolder}/substack/${collectionName}/${filename}`;
+        const path = `file:///${mediaFolder}/${source}/${collectionName}/${filename}`;
 
         navigator.clipboard.writeText(path).then(() => {
             setCopied(true);
@@ -217,7 +232,7 @@ const MediaLink = ({ label, filename, collectionName }: { label: string, filenam
 };
 
 export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
-    const { doc, collectionName, sidebarDocuments, totalPages, searchTerm, page: initialPage } = loaderData;
+    const { doc, collectionName, sidebarDocuments, totalPages, searchTerm, page: initialPage, source } = loaderData;
     const [searchParams] = useSearchParams();
     const submit = useSubmit();
     const navigation = useNavigation();
@@ -1111,16 +1126,16 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                             <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Media Files</h3>
                                             <div className="space-y-2 text-sm text-gray-700">
                                                 {doc.pdf && (
-                                                    <MediaLink label="PDF" filename={doc.pdf} collectionName={collectionName} />
+                                                    <MediaLink label="PDF" filename={doc.pdf} collectionName={collectionName} source={source} />
                                                 )}
                                                 {doc.video && (
-                                                    <MediaLink label="Video" filename={doc.video} collectionName={collectionName} />
+                                                    <MediaLink label="Video" filename={doc.video} collectionName={collectionName} source={source} />
                                                 )}
                                                 {doc.audio && (
-                                                    <MediaLink label="Audio" filename={doc.audio} collectionName={collectionName} />
+                                                    <MediaLink label="Audio" filename={doc.audio} collectionName={collectionName} source={source} />
                                                 )}
                                                 {doc.media?.map((m: string, i: number) => (
-                                                    <MediaLink key={i} label="Media" filename={m} collectionName={collectionName} />
+                                                    <MediaLink key={i} label="Media" filename={m} collectionName={collectionName} source={source} />
                                                 ))}
                                             </div>
                                         </div>
