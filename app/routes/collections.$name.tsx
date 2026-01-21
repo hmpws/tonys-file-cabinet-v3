@@ -21,14 +21,21 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     const skip = (page - 1) * limit;
 
     const client = await clientPromise;
-    const db = client.db("substack");
-    const collection = db.collection(params.name);
+    const { getCollectionConnection, getAllCollections } = await import("../db.server");
 
-    // Fetch collections for sidebar
-    const collectionsList = await db.listCollections().toArray();
-    collectionsList.sort((a, b) => a.name.localeCompare(b.name));
+    // 1. Get correct DB connection for this collection
+    const { collection, dbName } = await getCollectionConnection(client, params.name);
+    // Note: We use the centralized 'substack' DB for annotations, so we get that separately
+    const annotationDb = client.db("substack");
 
-    // Process collections for sidebar (similar to home.tsx but simpler)
+    // Determine date field based on DB source
+    const isGhost = dbName === "ghost"; // Or use DB_NAMES constant if imported
+    const dateField = isGhost ? "article.published_at" : "article.post_date";
+
+    // Fetch collections for sidebar (Unified)
+    const collectionsList = await getAllCollections(client);
+
+    // Process collections for sidebar
     const sidebarCollections = collectionsList.filter((c) => c.name !== "annotations" && !c.name.startsWith("#")).map(c => ({
         name: c.name
     }));
@@ -38,11 +45,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         ? { "article.title": { $regex: searchTerm, $options: "i" } }
         : {};
 
-    // Projection to get _id, article.title, and article.post_date
+    // Projection to get _id, article.title, and date field
+    const projectFields: any = { _id: 1, "article.title": 1, "article.audience": 1 };
+    projectFields[dateField] = 1;
+
     const documents = await collection
         .find(filter)
-        .sort({ "article.post_date": -1 })
-        .project({ _id: 1, "article.title": 1, "article.post_date": 1, "article.audience": 1 })
+        .sort({ [dateField]: -1 })
+        .project(projectFields)
         .skip(skip)
         .limit(limit)
         .limit(limit)
@@ -53,7 +63,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     // Fetch Statuses
     const docIds = documents.map(d => d._id.toString());
     const statusMap: Record<string, { read: boolean, liked: boolean, tags: string[] }> = {};
-    const statuses = await db.collection("#annotations").find({
+    const statuses = await annotationDb.collection("#annotations").find({
         documentId: { $in: docIds },
         range: null
     }).project({ documentId: 1, read: 1, liked: 1, tags: 1 }).toArray();
@@ -67,7 +77,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         documents: documents.map((doc) => ({
             id: doc._id.toString(),
             title: doc.article?.title || "Untitled Document",
-            date: doc.article?.post_date,
+            // Unify date property
+            date: isGhost ? (doc.article as any).published_at : doc.article?.post_date,
             audience: doc.article?.audience,
             read: statusMap[doc._id.toString()]?.read || false,
             liked: statusMap[doc._id.toString()]?.liked || false,
