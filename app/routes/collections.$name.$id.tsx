@@ -22,7 +22,7 @@ export function meta({ data }: Route.MetaArgs) {
     const fullTitle = date ? `${collectionName} - ${date} - ${title}` : `${collectionName} - ${title}`;
 
     return [
-        { title: fullTitle },
+        { title },
         { name: "description", content: data.doc.article?.subtitle || "View document details" },
         ...(data.collectionName && articleId ? [{
             name: "dc.identifier",
@@ -870,9 +870,75 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
         sessionStorage.setItem("sidebarOpen", String(isOpen));
     };
 
+    const mediaBase = "file:///H:/My Drive/Scraper/media";
+    const mediaUrl = (filename: string) => `${mediaBase}/${source}/${collectionName}/${filename}`;
+
+    const schemaData = {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": doc.article?.title || "Untitled Document",
+        "alternativeHeadline": doc.article?.subtitle,
+        "description": doc.article?.subtitle,
+        "datePublished": doc.article?.post_date ? new Date(doc.article.post_date).toISOString() : undefined,
+        "keywords": docStatus.tags ? docStatus.tags.join(", ") : undefined,
+        "audience": doc.article?.audience,
+        "author": [{
+            "@type": "Person",
+            "name": collectionName
+        }],
+        "publisher": {
+            "@type": "Organization",
+            "name": "Tony's File Cabinet"
+        },
+        "url": source === "ghost" ? doc.article?.url : doc.article?.canonical_url,
+
+        // Split Media Fields
+        // PDF -> encoding
+        ...(doc.pdf ? {
+            "encoding": {
+                "@type": "MediaObject",
+                "contentUrl": mediaUrl(doc.pdf),
+                "encodingFormat": "application/pdf",
+                "name": "PDF"
+            }
+        } : {}),
+
+        // Video -> video
+        ...(doc.video ? {
+            "video": {
+                "@type": "VideoObject",
+                "contentUrl": mediaUrl(doc.video),
+                "name": "Video",
+                "uploadDate": doc.article?.post_date
+            }
+        } : {}),
+
+        // Audio -> audio
+        ...(doc.audio ? {
+            "audio": {
+                "@type": "AudioObject",
+                "contentUrl": mediaUrl(doc.audio),
+                "name": "Audio",
+                "uploadDate": doc.article?.post_date
+            }
+        } : {}),
+
+        // Generic Media -> associatedMedia
+        ...(doc.media && doc.media.length > 0 ? {
+            "associatedMedia": doc.media.map((m: string) => ({
+                "@type": "MediaObject",
+                "contentUrl": mediaUrl(m),
+                "name": "Media"
+            })),
+            // Flat list for easier template looping: {{#each schema:mediaUrl}} {{this}} {{/each}} // doesn't seem to work
+            "mediaUrl": doc.media.map((m: string) => mediaUrl(m))
+        } : {})
+    };
+
 
     return (
         <div className="min-h-screen bg-white font-sans flex flex-col md:flex-row relative">
+            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaData) }} />
             {/* Mobile/Collapsed Toggle Button */}
             <button
                 ref={toggleButtonRef}
