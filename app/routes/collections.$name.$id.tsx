@@ -149,26 +149,27 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 }
 
 // Memoize the content to prevent React from re-setting innerHTML on parent re-renders
-const ArticleContent = memo(({ html }: { html: string }) => (
+const ArticleContent = memo(({ html, isDarkMode }: { html: string, isDarkMode: boolean }) => (
     <div
         id="article-content"
-        className="prose prose-lg prose-slate font-serif
-                   prose-headings:font-sans prose-headings:font-bold prose-headings:text-gray-900
-                   prose-p:text-gray-800 prose-p:leading-relaxed
-                   prose-a:text-blue-600 prose-a:no-underline hover:prose-a:underline
+        className={`prose prose-lg font-serif
+                   prose-headings:font-sans prose-headings:font-bold
+                   prose-p:leading-relaxed
+                   prose-a:no-underline hover:prose-a:underline
                    prose-img:rounded-xl prose-img:shadow-md
-                   w-full max-w-none relative" // Added relative for positioning
+                   w-full max-w-none relative
+                   ${isDarkMode ? 'prose-invert prose-p:text-gray-300 prose-headings:text-gray-100 prose-a:text-blue-400' : 'prose-slate prose-headings:text-gray-900 prose-p:text-gray-800 prose-a:text-blue-600'}`} // Added relative for positioning
         dangerouslySetInnerHTML={{ __html: html }}
     />
 ));
 
-const Comment = ({ comment }: { comment: any }) => (
+const Comment = ({ comment, isDarkMode }: { comment: any, isDarkMode: boolean }) => (
     <div className="group">
         <div className="flex items-start justify-between mb-2">
             <div className="flex items-center gap-2">
-                <span className="font-bold text-gray-900">{comment.name}</span>
+                <span className={`font-bold ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>{comment.name}</span>
                 {comment.date && (
-                    <span className="text-gray-400 text-sm">
+                    <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`}>
                         {new Date(comment.date).toLocaleDateString("en-US", {
                             year: 'numeric',
                             month: 'long',
@@ -178,20 +179,20 @@ const Comment = ({ comment }: { comment: any }) => (
                 )}
             </div>
         </div>
-        <div className="text-gray-700 leading-relaxed text-base bg-gray-50 p-4 rounded-lg">
+        <div className={`leading-relaxed text-base p-4 rounded-lg ${isDarkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-50 text-gray-700'}`}>
             {comment.body}
         </div>
         {comment.children && comment.children.length > 0 && (
-            <div className="ml-6 mt-4 space-y-4 pl-4 border-l-2 border-gray-100">
+            <div className={`ml-6 mt-4 space-y-4 pl-4 border-l-2 ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
                 {comment.children.map((child: any) => (
-                    <Comment key={child.id} comment={child} />
+                    <Comment key={child.id} comment={child} isDarkMode={isDarkMode} />
                 ))}
             </div>
         )}
     </div>
 );
 
-const MediaLink = ({ label, filename, collectionName, source }: { label: string, filename: string, collectionName: string, source: string }) => {
+const MediaLink = ({ label, filename, collectionName, source, isDarkMode }: { label: string, filename: string, collectionName: string, source: string, isDarkMode: boolean }) => {
     const [copied, setCopied] = useState(false);
 
     const handleCopy = (e: React.MouseEvent) => {
@@ -210,14 +211,14 @@ const MediaLink = ({ label, filename, collectionName, source }: { label: string,
 
     return (
         <div className="flex items-center gap-2 max-w-full">
-            <span className="font-medium text-gray-500 w-16 shrink-0">{label}:</span>
+            <span className={`font-medium w-16 shrink-0 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{label}:</span>
             <button
                 onClick={handleCopy}
-                className="font-mono bg-white px-2 py-1 rounded border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition-colors text-left flex items-center gap-2 group relative cursor-pointer min-w-0"
+                className={`font-mono px-2 py-1 rounded border transition-colors text-left flex items-center gap-2 group relative cursor-pointer min-w-0 ${isDarkMode ? 'bg-gray-700 border-gray-600 hover:bg-gray-600 hover:border-gray-500 text-gray-200' : 'bg-white border-gray-200 hover:bg-blue-50 hover:border-blue-300 text-gray-900'}`}
                 title="Click to copy file path"
             >
                 <span className="truncate">{filename}</span>
-                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 shrink-0">
+                <span className={`transition-opacity shrink-0 opacity-0 group-hover:opacity-100 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`}>
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                 </span>
                 {copied && (
@@ -242,6 +243,22 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
     const [isRestored, setIsRestored] = useState(false);
     const [isOnline, setIsOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
     const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Dark Mode State
+    const [isDarkMode, setIsDarkMode] = useState(false);
+
+    useEffect(() => {
+        const stored = localStorage.getItem("readerDarkMode");
+        if (stored) {
+            setIsDarkMode(stored === "true");
+        }
+    }, []);
+
+    const toggleDarkMode = () => {
+        const newState = !isDarkMode;
+        setIsDarkMode(newState);
+        localStorage.setItem("readerDarkMode", String(newState));
+    };
 
     // Document Status (Read/Liked)
     const [docStatus, setDocStatus] = useState(loaderData.docStatus);
@@ -1067,7 +1084,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
             </aside >
 
             {/* Main Content */}
-            <div className={`flex-1 order-1 md:order-2 bg-white min-h-screen p-4 flex flex-col items-center print:overflow-visible transition-opacity duration-300 ${isSidebarOpen ? 'opacity-50 pointer-events-none' : ''}`}>
+            <div className={`flex-1 order-1 md:order-2 min-h-screen p-4 flex flex-col items-center print:overflow-visible transition-colors duration-300 ${isSidebarOpen ? 'opacity-50 pointer-events-none' : ''} ${isDarkMode ? 'bg-gray-900' : 'bg-white'} print:bg-white`}>
                 <div className="max-w-[1600px] w-full transition-all duration-300 print:max-w-none print:w-full">
 
                     <main className="px-6 pb-20 print:pb-0">
@@ -1077,15 +1094,27 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                             {/* Content Column */}
                             <div className="lg:min-w-0 2xl:col-start-2">
                                 {/* Header Section (Now Annotatable) */}
-                                <header className="pt-12 pb-8">
+                                <header className="pt-12 pb-8 relative">
+                                    <button
+                                        onClick={toggleDarkMode}
+                                        className="absolute top-4 right-0 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors print:hidden"
+                                        title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                                    >
+                                        {isDarkMode ? (
+                                            <svg className="w-5 h-5 text-yellow-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                                        ) : (
+                                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                                        )}
+                                    </button>
+
                                     <p className="text-blue-600 mb-4 inline-block font-medium">
                                         {collectionName}
                                     </p>
-                                    <h1 ref={titleRef} className="text-4xl font-bold text-gray-900 leading-tight mb-2">
+                                    <h1 ref={titleRef} className={`text-4xl font-bold leading-tight mb-2 ${isDarkMode ? 'text-gray-100' : 'text-gray-900'} print:text-black`}>
                                         {doc.article?.title || "Untitled Document"}
                                     </h1>
                                     {doc.article?.subtitle && (
-                                        <h2 className="text-xl text-gray-500 font-serif leading-relaxed mb-4">
+                                        <h2 className={`text-xl font-serif leading-relaxed mb-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} print:text-gray-500`}>
                                             {doc.article.subtitle}
                                         </h2>
                                     )}
@@ -1101,11 +1130,11 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                     {/* Link Tags Row */}
                                     <div className="flex flex-wrap items-center gap-2 mb-4">
                                         {docStatus.tags && docStatus.tags.map((tag: string, i: number) => (
-                                            <span key={i} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200">
+                                            <span key={i} className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${isDarkMode ? 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-gray-200'}`}>
                                                 {tag}
                                                 <button
                                                     onClick={() => removeTag(tag)}
-                                                    className="ml-1.5 text-gray-400 hover:text-red-500 focus:outline-none print:hidden"
+                                                    className={`ml-1.5 focus:outline-none print:hidden ${isDarkMode ? 'text-gray-500 hover:text-red-400' : 'text-gray-400 hover:text-red-500'}`}
                                                     title="Remove tag"
                                                 >
                                                     &times;
@@ -1116,7 +1145,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                             <input
                                                 type="text"
                                                 placeholder="+ Tag"
-                                                className="w-20 text-xs border border-gray-300 bg-white text-gray-900 rounded-full px-3 py-1.5 focus:w-32 focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all placeholder-gray-500 shadow-sm"
+                                                className={`w-20 text-xs border rounded-full px-3 py-1.5 focus:w-32 focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all placeholder-gray-500 shadow-sm ${isDarkMode ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-900'}`}
                                                 onKeyDown={(e) => {
                                                     if (e.key === "Enter" || e.key === ",") {
                                                         e.preventDefault();
@@ -1146,11 +1175,11 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                         <div className="flex items-center gap-4">
                                             <button
                                                 onClick={() => toggleStatus('read')}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-300 text-gray-900 bg-white hover:bg-gray-50 transition-colors"
+                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors ${isDarkMode ? 'border-gray-600 text-gray-300 bg-gray-800 hover:bg-gray-700' : 'border-gray-300 text-gray-900 bg-white hover:bg-gray-50'}`}
                                             >
                                                 <span>
                                                     {docStatus.read ? "✅" : (
-                                                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <svg className={`w-4 h-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" opacity="0" /> {/* Hidden check for sizing/visual consistency if needed, or just a box */}
                                                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" strokeWidth="2" />
                                                         </svg>
@@ -1160,7 +1189,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                             </button>
                                             <button
                                                 onClick={() => toggleStatus('liked')}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-300 text-gray-900 bg-white hover:bg-gray-50 transition-colors"
+                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-colors ${isDarkMode ? 'border-gray-600 text-gray-300 bg-gray-800 hover:bg-gray-700' : 'border-gray-300 text-gray-900 bg-white hover:bg-gray-50'}`}
                                             >
                                                 <span>{docStatus.liked ? "❤️" : "♡"}</span>
                                                 <span className="font-medium">Liked</span>
@@ -1188,20 +1217,20 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
 
                                     {/* Media Section */}
                                     {(doc.pdf || doc.video || doc.audio || (doc.media && doc.media.length > 0)) && (
-                                        <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-100">
-                                            <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Media Files</h3>
+                                        <div className={`mt-6 p-4 rounded-lg border ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
+                                            <h3 className={`text-sm font-bold uppercase tracking-wide mb-3 ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>Media Files</h3>
                                             <div className="space-y-2 text-sm text-gray-700">
                                                 {doc.pdf && (
-                                                    <MediaLink label="PDF" filename={doc.pdf} collectionName={collectionName} source={source} />
+                                                    <MediaLink label="PDF" filename={doc.pdf} collectionName={collectionName} source={source} isDarkMode={isDarkMode} />
                                                 )}
                                                 {doc.video && (
-                                                    <MediaLink label="Video" filename={doc.video} collectionName={collectionName} source={source} />
+                                                    <MediaLink label="Video" filename={doc.video} collectionName={collectionName} source={source} isDarkMode={isDarkMode} />
                                                 )}
                                                 {doc.audio && (
-                                                    <MediaLink label="Audio" filename={doc.audio} collectionName={collectionName} source={source} />
+                                                    <MediaLink label="Audio" filename={doc.audio} collectionName={collectionName} source={source} isDarkMode={isDarkMode} />
                                                 )}
                                                 {doc.media?.map((m: string, i: number) => (
-                                                    <MediaLink key={i} label="Media" filename={m} collectionName={collectionName} source={source} />
+                                                    <MediaLink key={i} label="Media" filename={m} collectionName={collectionName} source={source} isDarkMode={isDarkMode} />
                                                 ))}
                                             </div>
                                         </div>
@@ -1210,7 +1239,7 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
 
                                 {/* Article Body */}
                                 {doc.article?.body_html ? (
-                                    <ArticleContent html={doc.article.body_html} />
+                                    <ArticleContent html={doc.article.body_html} isDarkMode={isDarkMode} />
                                 ) : (
                                     <div className="w-full">
                                         <pre className="bg-gray-100 text-gray-800 p-4 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed border border-gray-200">
@@ -1222,8 +1251,8 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                 {/* Transcript Section */}
                                 {doc.transcript && (
                                     <section className="mt-16 border-t border-gray-100 pt-10">
-                                        <h3 className="text-2xl font-bold text-gray-900 mb-6">Transcript</h3>
-                                        <div className="prose prose-lg prose-slate text-gray-700 leading-relaxed bg-gray-50 p-6 rounded-xl border border-gray-100 whitespace-pre-wrap font-serif w-full max-w-none">
+                                        <h3 className={`text-2xl font-bold mb-6 ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>Transcript</h3>
+                                        <div className={`prose prose-lg leading-relaxed p-6 rounded-xl border whitespace-pre-wrap font-serif w-full max-w-none ${isDarkMode ? 'bg-gray-800 border-gray-700 prose-invert text-gray-300' : 'bg-gray-50 border-gray-100 prose-slate text-gray-700'}`}>
                                             {doc.transcript}
                                         </div>
                                     </section>
@@ -1232,10 +1261,10 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
                                 {/* Comments Section */}
                                 {(doc.comments?.comments?.length > 0 || doc.article?.comments?.length > 0) && (
                                     <section className="mt-16 border-t border-gray-100 pt-10 break-inside-avoid max-w-[800px] mx-auto print:mx-0">
-                                        <h3 className="text-2xl font-bold text-gray-900 mb-8">Comments</h3>
+                                        <h3 className={`text-2xl font-bold mb-8 ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>Comments</h3>
                                         <div className="space-y-8">
                                             {(doc.comments?.comments || doc.article?.comments || []).map((comment: any) => (
-                                                <Comment key={comment.id} comment={comment} />
+                                                <Comment key={comment.id} comment={comment} isDarkMode={isDarkMode} />
                                             ))}
                                         </div>
                                     </section>
