@@ -278,7 +278,8 @@ const MediaLink = ({
   const handleCopy = (e: React.MouseEvent) => {
     e.preventDefault();
     // const mediaFolder = "H:/My Drive/Scraper/media";
-    const mediaFolder = "/Users/tony/Google Drive/My Drive/Scraper/media/";
+    const mediaFolder =
+      "/Users/tony/t.tse@madesimpleapps.com - Google Drive/My Drive/Scraper/media/";
     // const path = `file:///${mediaFolder}/${source}/${collectionName}/${filename}`;
     const path = `open '${mediaFolder}/${source}/${collectionName}/${filename}'`;
 
@@ -1107,7 +1108,8 @@ export default function DocumentRoute({ loaderData }: Route.ComponentProps) {
   };
 
   //   const mediaBase = "file:///H:/My Drive/Scraper/media";
-  const mediaBase = "/Users/tony/Google Drive/My Drive/Scraper/media/";
+  const mediaBase =
+    "/Users/tony/t.tse@madesimpleapps.com - Google Drive/My Drive/Scraper/media/";
   const mediaUrl = (filename: string) =>
     `${mediaBase}/${source}/${collectionName}/${filename}`;
 
